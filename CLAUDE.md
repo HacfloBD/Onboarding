@@ -45,7 +45,9 @@ public/                   Netlify publish dir (everything here reaches the brows
   js/state.js             shared in-memory state (S) and late-bound hooks between modules
   js/ui.js                toast, modal, delegated data-action handling, formatting helpers
   js/widgets.js           step widgets by step.type (forms with auto-save, uploads, links)
-  js/admin.js             admin panels: Projects, Project Setup, Users, Phases
+  js/admin.js             admin panels: Projects, Project Setup, Users, Phases, Phase Template
+  js/phase-editor.js      phase/step editor for the master template and per-project phases, template diff
+  js/render.js            phase card markup shared by the Journey and the editor's live preview
   js/auth.js              sign-in flows (customer email code, staff password, reset, invite)
   js/data.js              the ONLY module that talks to Supabase data (tables, storage, RPC, realtime, functions)
   js/supabase.js          the one browser Supabase client (anon key only)
@@ -89,4 +91,11 @@ docs/                     manual, overview, build prompts
 - Rendering is string templates into `innerHTML`; every database or user string goes through `escapeHtml()`.
 - Phase status, step/form/upload/phase activity logging and step completion stamps are done by database triggers (`0005_project_workflow.sql`), not by the browser. Projects are created with the `create_project_from_template` RPC and reset with `reset_project_progress`.
 - Realtime: `subscribeProject()` listens to project_steps, project_phases, form_responses and uploads for the open project. `app.js` re-fetches on change and defers the re-render while the user is typing in a form.
-- Step labels (1a, 1b...) are computed from phase position and step order, never stored.
+- Numbering is never stored or shown from ids: "Phase N" is the phase's index among live phases, step labels are N + letter (1a, 1b...). Reordering renumbers everywhere. Use `phaseCard()` / `stepLabel()` from `render.js`.
+
+## Phase content (from Prompt 4)
+- Master template: `template_phases`/`template_steps`, saved only through the `save_template` RPC, which also writes a `template_versions` snapshot. `restore_template_version` saves an old snapshot as a new version. Template ids are stable across saves.
+- New projects copy the template (`create_project_from_template`) and record `source_template_phase_id`/`source_template_step_id` plus `projects.template_version`. Source ids have no FK on purpose, so removed template items can still be matched.
+- Per-project edits go through `save_project_phases` (whole draft, atomic). It never changes `done` or phase status. A removed step that is done or has form data/uploads is archived (`archived_at` on the step, its form_responses and uploads), never deleted. Archived rows are hidden from customers by RLS and ignored by progress, labels and `project_overview`.
+- "Apply latest template" is computed in the browser (`computeApply` in `phase-editor.js`) and saved with the same RPC: completed steps and project-only items are kept.
+- A phase with no live steps never auto-completes; admins set its status in the Phases editor.

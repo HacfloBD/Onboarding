@@ -2,9 +2,10 @@
 import { S, hooks } from './state.js';
 import {
   listProjectOverview, createProject, updateProject, setProjectStatus, listProfiles,
-  setPhaseStatus, resetProjectProgress, logActivity, callFunction
+  resetProjectProgress, logActivity, callFunction
 } from './data.js';
 import { portalUrl } from './supabase.js';
+import { openTemplateEditor, openProjectEditor, wireEditor, guardUnsaved, closeEditor } from './phase-editor.js';
 import { toast, openModal, closeModal, registerActions, escapeHtml, daysLeft, slug } from './ui.js';
 
 const esc = escapeHtml;
@@ -21,8 +22,15 @@ let showArchived = false;
 
 export const currentSection = () => section;
 
+let editorWired = false;
+
 export async function adminGo(s = section) {
+  if (s !== section && (section === 'template' || section === 'phases')) {
+    guardUnsaved(() => { closeEditor(); section = s; adminGo(s); });
+    return;
+  }
   section = s;
+  if (!editorWired) { wireEditor($('aC')); editorWired = true; }
   document.querySelectorAll('.ani').forEach(e => e.classList.toggle('on', e.dataset.a === s));
   const c = $('aC'), t = ++tok;
   const stale = () => t !== tok;
@@ -30,7 +38,11 @@ export async function adminGo(s = section) {
     if (s === 'projects') await renderProjects(c, stale);
     else if (s === 'setup') renderSetup(c);
     else if (s === 'users') await renderUsers(c, stale);
-    else if (s === 'phases') renderPhases(c);
+    else if (s === 'template') await openTemplateEditor(c);
+    else if (s === 'phases') {
+      if (S.project) await openProjectEditor(c);
+      else c.innerHTML = '<div class="ash"><h2>Phases</h2></div><p style="font-size:.86rem;color:var(--g4)">Select a project first. To change the phases every new project starts with, use Phase Template.</p>';
+    }
   } catch (e) {
     if (!stale()) c.innerHTML = failed(e);
   }
@@ -228,22 +240,6 @@ function activeModal(u, on) {
 }
 
 // ---------------------------------------------------------------------------
-// Phases (status of the selected project's phases)
-// ---------------------------------------------------------------------------
-
-function renderPhases(c) {
-  if (!S.project) {
-    c.innerHTML = '<div class="ash"><h2>Phases</h2></div><p style="font-size:.86rem;color:var(--g4)">Select a project first.</p>';
-    return;
-  }
-  const sts = ['pending', 'active', 'complete'];
-  c.innerHTML = `<div class="ash"><h2>Phases</h2></div>
-<table class="at"><thead><tr><th>#</th><th>Phase</th><th>Status</th></tr></thead><tbody>${S.phases.map(p => `<tr><td>${p.position}</td><td>${esc(p.name)}</td>
-<td><select data-change="phase-status" data-phase="${p.id}" style="padding:4px 8px;border:1px solid var(--g3);border-radius:var(--rf);font-size:.82rem">
-${sts.map(x => `<option value="${x}" ${p.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table>`;
-}
-
-// ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
@@ -331,13 +327,5 @@ registerActions({
       toast(esc(e.message), 'err');
     }
     adminGo('users');
-  },
-  'phase-status': async el => {
-    try {
-      await setPhaseStatus(el.dataset.phase, el.value);
-      await hooks.reload(true);
-    } catch (e) {
-      toast('Could not update the phase: ' + esc(e.message), 'err');
-    }
   }
 });

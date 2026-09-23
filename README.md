@@ -66,6 +66,9 @@ Build settings come from `netlify.toml`, so nothing needs to be set in the Netli
 
 ## How the data flows
 
+- Admin > Phase Template edits the master for new projects. Every save is a numbered version with a note, and any version can be restored.
+- Admin > Phases edits the selected customer's phases only. Steps with customer data are archived rather than deleted (see "Archived items"). "Apply latest template" shows a diff before changing anything.
+
 - Admin > Projects > New project calls the `create_project_from_template` database function, which copies the 5-phase master template into the new project.
 - Customers and admins see the same project data live (Supabase Realtime). Forms auto-save about a second after typing stops.
 - Uploads go to the private `customer-uploads` bucket under `{project_id}/{step_id}/` and download through 10-minute signed links.
@@ -81,7 +84,9 @@ public/                  what Netlify serves
   js/state.js            shared in-memory state
   js/ui.js               toast, modal, event delegation, formatting
   js/widgets.js          step forms, auto-save, uploads
-  js/admin.js            admin panels (Projects, Project Setup, Users, Phases)
+  js/admin.js            admin panels (Projects, Project Setup, Users, Phases, Phase Template)
+  js/phase-editor.js     phase and step editor (template + per project), template diff
+  js/render.js           phase card shared by the Journey and the editor preview
   js/auth.js             sign-in flows
   js/data.js             all database, storage and function calls
   js/supabase.js         browser Supabase client (anon key)

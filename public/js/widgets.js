@@ -190,14 +190,16 @@ ${dropZone(step, { accept })}</div>${optB}</div>
 };
 
 // Extra HTML under a step's title and detail.
-export function renderStepExtra(step) {
+// opts.asClient renders what a customer would see (used by the admin preview).
+export function renderStepExtra(step, { asClient = false } = {}) {
   const w = W[step.type];
   if (!w) return '';
-  const editable = isAdmin() || (step.owner !== 'flo' && !step.done);
+  const admin = isAdmin() && !asClient;
+  const editable = admin || (step.owner !== 'flo' && !step.done);
   if (!step.done) return w(step, !editable);
   // Completed: hide the form, keep the data one click away.
   const open = S.viewOpen.has(step.id);
-  return `<div class="sact"><button class="btn btn-g btn-sm" data-action="view-submitted" data-step="${step.id}">${open ? 'Hide submitted info ▴' : 'View submitted info ▾'}</button></div>${open ? `<div class="subv">${w(step, !isAdmin())}</div>` : ''}`;
+  return `<div class="sact"><button class="btn btn-g btn-sm" data-action="view-submitted" data-step="${step.id}">${open ? 'Hide submitted info ▴' : 'View submitted info ▾'}</button></div>${open ? `<div class="subv">${w(step, !admin)}</div>` : ''}`;
 }
 
 // Loads signed thumbnail URLs for logo previews after a render.

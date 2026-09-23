@@ -3,7 +3,7 @@
 import { supabase } from './supabase.js';
 
 const BUCKET = 'customer-uploads';
-const PROJECT_COLS = 'id,code,name,csm_name,target_go_live,status';
+const PROJECT_COLS = 'id,code,name,csm_name,target_go_live,status,template_version';
 const PROFILE_COLS = 'user_id,email,full_name,role,project_id,active';
 
 function check({ data, error }) {
@@ -60,20 +60,68 @@ export async function setProjectStatus(id, status) {
 
 export async function loadPhasesAndSteps(projectId) {
   const [phases, steps] = await Promise.all([
-    supabase.from('project_phases').select('*').eq('project_id', projectId).order('position'),
-    supabase.from('project_steps').select('*').eq('project_id', projectId).order('position').order('created_at')
+    supabase.from('project_phases').select('*').eq('project_id', projectId).is('archived_at', null).order('position').order('created_at'),
+    supabase.from('project_steps').select('*').eq('project_id', projectId).is('archived_at', null).order('position').order('created_at')
   ]);
   const ph = check(phases), st = check(steps);
   return ph.map(p => ({ ...p, steps: st.filter(s => s.project_phase_id === p.id) }));
 }
 
 export async function loadForms(projectId) {
-  const rows = check(await supabase.from('form_responses').select('*').eq('project_id', projectId));
+  const rows = check(await supabase.from('form_responses').select('*').eq('project_id', projectId).is('archived_at', null));
   return Object.fromEntries(rows.map(r => [r.project_step_id, r]));
 }
 
 export async function loadUploads(projectId) {
-  return check(await supabase.from('uploads').select('*').eq('project_id', projectId).order('created_at'));
+  return check(await supabase.from('uploads').select('*').eq('project_id', projectId).is('archived_at', null).order('created_at'));
+}
+
+// Admin: what was archived when steps were removed in the phase editor.
+export async function loadArchived(projectId) {
+  const [steps, forms, uploads] = await Promise.all([
+    supabase.from('project_steps').select('id,text,type,done,archived_at,project_phase_id').eq('project_id', projectId).not('archived_at', 'is', null).order('archived_at', { ascending: false }),
+    supabase.from('form_responses').select('*').eq('project_id', projectId).not('archived_at', 'is', null),
+    supabase.from('uploads').select('*').eq('project_id', projectId).not('archived_at', 'is', null).order('created_at')
+  ]);
+  return { steps: check(steps), forms: check(forms), uploads: check(uploads) };
+}
+
+// ---------------------------------------------------------------------------
+// Phase template (master) and per-project phase editing
+// ---------------------------------------------------------------------------
+
+export async function loadTemplate() {
+  const [phases, steps] = await Promise.all([
+    supabase.from('template_phases').select('*').order('position').order('created_at'),
+    supabase.from('template_steps').select('*').order('position').order('created_at')
+  ]);
+  const ph = check(phases), st = check(steps);
+  return ph.map(p => ({ ...p, steps: st.filter(s => s.template_phase_id === p.id) }));
+}
+
+// Replaces the master template and records a new version. Returns the version number.
+export async function saveTemplate(phases, note) {
+  return check(await supabase.rpc('save_template', { p_phases: phases, p_note: note || null }));
+}
+
+export async function listTemplateVersions() {
+  return check(await supabase.from('template_versions')
+    .select('id,version_number,note,created_by,created_at').order('version_number', { ascending: false }));
+}
+
+export async function restoreTemplateVersion(version) {
+  return check(await supabase.rpc('restore_template_version', { p_version: version }));
+}
+
+// Replaces one project's phases/steps. Removed steps with progress or data are archived.
+export async function saveProjectPhases(projectId, phases, { note, action, templateVersion } = {}) {
+  return check(await supabase.rpc('save_project_phases', {
+    p_project_id: projectId,
+    p_phases: phases,
+    p_note: note || null,
+    p_action: action || 'phases_edited',
+    p_template_version: templateVersion ?? null
+  }));
 }
 
 export async function loadSettings() {

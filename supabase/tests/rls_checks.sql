@@ -3,8 +3,9 @@
 --
 -- How to run: paste the whole file into the Supabase SQL editor and click Run.
 -- The last result is a table of checks. Every row should say PASS.
--- The script creates two throwaway projects (rls-test-a, rls-test-b), three
--- throwaway users (@rls-test.invalid) and deletes them again at the end.
+-- The script creates throwaway projects (rls-test-a to rls-test-d), three
+-- throwaway users (@rls-test.invalid) and two template versions (it adds a
+-- phase, then restores the previous version) and removes all of it at the end.
 -- It is safe to run more than once.
 
 -- ---------------------------------------------------------------------------
@@ -14,8 +15,10 @@
 reset role;
 select set_config('request.jwt.claims', '', false);
 
+delete from public.template_versions where created_by in (select id from auth.users where email like '%@rls-test.invalid');
+delete from public.activity_log where actor_id in (select id from auth.users where email like '%@rls-test.invalid');
 delete from auth.users where email like '%@rls-test.invalid';
-delete from public.projects where code in ('rls-test-a', 'rls-test-b', 'rls-test-c');
+delete from public.projects where code in ('rls-test-a', 'rls-test-b', 'rls-test-c', 'rls-test-d');
 
 drop table if exists pg_temp.rls_results;
 create temp table rls_results (n serial, check_name text, result text);
@@ -241,6 +244,22 @@ begin
   insert into rls_results (check_name, result) values
     ('A cannot reset project progress', case when err is not null then 'PASS' else 'FAIL' end);
 
+  err := null;
+  begin
+    perform public.save_template('[]'::jsonb, 'wipe');
+  exception when others then err := sqlerrm;
+  end;
+  insert into rls_results (check_name, result) values
+    ('A cannot save the template', case when err is not null then 'PASS' else 'FAIL' end);
+
+  err := null;
+  begin
+    perform public.save_project_phases(a_project, '[]'::jsonb);
+  exception when others then err := sqlerrm;
+  end;
+  insert into rls_results (check_name, result) values
+    ('A cannot edit project phases', case when err is not null then 'PASS' else 'FAIL' end);
+
   update public.project_phases set status = 'complete' where project_id = a_project;
   get diagnostics n = row_count;
   insert into rls_results (check_name, result) values
@@ -342,6 +361,83 @@ begin
   select count(*) into n from public.project_steps where project_id = '00000000-0000-4000-9000-00000000000b' and done;
   insert into rls_results (check_name, result) values
     ('Reset leaves other projects alone', case when n = 0 and exists (select 1 from public.form_responses where project_id = '00000000-0000-4000-9000-00000000000b') then 'PASS' else 'FAIL' end);
+
+  -- Phase editor: archive instead of delete when a removed step holds data.
+  update public.project_steps set done = true where id = '00000000-0000-4000-b000-0000000000a1';
+  insert into public.uploads (project_id, project_step_id, kind, link_url)
+  values ('00000000-0000-4000-9000-00000000000a', '00000000-0000-4000-b000-0000000000a1', 'link', 'https://example.com/keep');
+  perform public.save_project_phases('00000000-0000-4000-9000-00000000000a',
+    '[{"id":"00000000-0000-4000-a000-00000000000a","name":"Phase A","owner":"both",
+       "steps":[{"id":"00000000-0000-4000-b000-0000000000a2","text":"A FLO step","owner":"flo","type":"none"},
+                {"id":"00000000-0000-4000-b000-0000000000a3","text":"New step","owner":"client","type":"none"}]}]'::jsonb,
+    'test edit');
+  select count(*) into n from public.project_steps where id = '00000000-0000-4000-b000-0000000000a1' and archived_at is not null;
+  insert into rls_results (check_name, result) values
+    ('Removing a done step archives it', case when n = 1 then 'PASS' else 'FAIL' end);
+  select count(*) into n from public.uploads where project_step_id = '00000000-0000-4000-b000-0000000000a1' and archived_at is not null;
+  insert into rls_results (check_name, result) values
+    ('Its uploads are archived, not deleted', case when n = 1 then 'PASS' else 'FAIL' end);
+  select count(*) into n from public.project_steps where id = '00000000-0000-4000-b000-0000000000a3' and position = 2;
+  insert into rls_results (check_name, result) values
+    ('New project step inserted in order', case when n = 1 then 'PASS' else 'FAIL' end);
+  select count(*) into n from public.activity_log where project_id = '00000000-0000-4000-9000-00000000000a' and action = 'phases_edited';
+  insert into rls_results (check_name, result) values
+    ('Project phase edit is logged', case when n = 1 then 'PASS' else 'FAIL' end);
+
+  err := null;
+  begin
+    perform public.save_project_phases('00000000-0000-4000-9000-00000000000a',
+      '[{"id":"00000000-0000-4000-a000-00000000000b","name":"Stolen","owner":"both","steps":[]}]'::jsonb);
+  exception when others then err := sqlerrm;
+  end;
+  insert into rls_results (check_name, result) values
+    ('Project edit cannot grab another project''s phase', case when err is not null then 'PASS' else 'FAIL' end);
+
+  -- Template versions: add a 6th phase, new projects get it, old ones don't.
+  declare
+    v int;
+    before_c int;
+    c public.projects;
+    snap jsonb := public.template_snapshot();
+  begin
+    select count(*) into before_c from public.project_phases where project_id = (select id from public.projects where code = 'rls-test-c');
+    v := public.save_template(
+      (snap -> 'phases') || jsonb_build_array(jsonb_build_object(
+        'id', '00000000-0000-4000-c000-000000000006', 'name', 'Hypercare', 'owner', 'flo',
+        'steps', jsonb_build_array(jsonb_build_object('id', '00000000-0000-4000-c000-0000000000f1', 'text', 'Check-in call', 'owner', 'both', 'type', 'none')))),
+      'Add hypercare');
+    c := public.create_project_from_template('RLS Test D', 'rls-test-d');
+    select count(*) into n from public.project_phases where project_id = c.id;
+    insert into rls_results (check_name, result) values
+      ('New project gets the added phase', case when n = jsonb_array_length(snap -> 'phases') + 1 then 'PASS' else 'FAIL (' || n || ')' end);
+    select count(*) into n from public.project_phases where project_id = (select id from public.projects where code = 'rls-test-c');
+    insert into rls_results (check_name, result) values
+      ('Existing project unchanged by template save', case when n = before_c then 'PASS' else 'FAIL' end);
+    perform public.restore_template_version(v - 1);
+    select count(*) into n from public.template_phases;
+    insert into rls_results (check_name, result) values
+      ('Restoring the previous version removes the phase', case when n = jsonb_array_length(snap -> 'phases') then 'PASS' else 'FAIL (' || n || ')' end);
+  end;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Client A again: archived rows are invisible
+-- ---------------------------------------------------------------------------
+
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-4000-8000-00000000000a","role":"authenticated"}', false);
+
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from public.project_steps where id = '00000000-0000-4000-b000-0000000000a1';
+  insert into rls_results (check_name, result) values
+    ('Client cannot see archived steps', case when n = 0 then 'PASS' else 'FAIL' end);
+  select count(*) into n from public.uploads where link_url = 'https://example.com/keep';
+  insert into rls_results (check_name, result) values
+    ('Client cannot see archived uploads', case when n = 0 then 'PASS' else 'FAIL' end);
 end;
 $$;
 
@@ -373,7 +469,9 @@ $$;
 reset role;
 select set_config('request.jwt.claims', '', false);
 
+delete from public.template_versions where created_by in (select id from auth.users where email like '%@rls-test.invalid');
+delete from public.activity_log where actor_id in (select id from auth.users where email like '%@rls-test.invalid');
 delete from auth.users where email like '%@rls-test.invalid';
-delete from public.projects where code in ('rls-test-a', 'rls-test-b', 'rls-test-c');
+delete from public.projects where code in ('rls-test-a', 'rls-test-b', 'rls-test-c', 'rls-test-d');
 
 select n as "#", check_name as "check", result from rls_results order by n;
