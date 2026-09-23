@@ -64,15 +64,26 @@ Build settings come from `netlify.toml`, so nothing needs to be set in the Netli
 - FLO staff: "FLO staff sign in" under the card, email and password, with "Forgot password".
 - Accounts are created only by admins (Admin > Project Setup or Admin > Users), through the `admin-create-user` Netlify Function.
 
+## How the data flows
+
+- Admin > Projects > New project calls the `create_project_from_template` database function, which copies the 5-phase master template into the new project.
+- Customers and admins see the same project data live (Supabase Realtime). Forms auto-save about a second after typing stops.
+- Uploads go to the private `customer-uploads` bucket under `{project_id}/{step_id}/` and download through 10-minute signed links.
+- Session requests and new uploads email the project's CSM (the admin whose name matches the project's CSM Name) or, if none matches, every active admin, through `notify-admins`.
+
 ## Folder layout
 
 ```
 public/                  what Netlify serves
   index.html
   css/app.css
-  js/app.js              app entry (ES module)
+  js/app.js              app entry: session, project loading, realtime, Journey/Status
+  js/state.js            shared in-memory state
+  js/ui.js               toast, modal, event delegation, formatting
+  js/widgets.js          step forms, auto-save, uploads
+  js/admin.js            admin panels (Projects, Project Setup, Users, Phases)
   js/auth.js             sign-in flows
-  js/data.js             database and function calls
+  js/data.js             all database, storage and function calls
   js/supabase.js         browser Supabase client (anon key)
   js/network-canvas.js   login page animation
   js/escape.js           escapeHtml() helper
@@ -81,7 +92,7 @@ public/                  what Netlify serves
   assets/files/          FLO_Onboarding_Forms.xlsx
   config.js              generated at build (gitignored)
 scripts/write-config.mjs writes public/config.js from env vars
-netlify/functions/       Netlify Functions (.mjs): admin-create-user, admin-deactivate-user
+netlify/functions/       Netlify Functions (.mjs): admin-create-user, admin-deactivate-user, notify-admins
 netlify/lib/             shared function code (admin guard, mailer, email bodies)
 netlify.toml             build, functions and security headers
 legacy/                  original single-file app (reference only)

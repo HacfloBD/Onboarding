@@ -15,7 +15,7 @@ reset role;
 select set_config('request.jwt.claims', '', false);
 
 delete from auth.users where email like '%@rls-test.invalid';
-delete from public.projects where code in ('rls-test-a', 'rls-test-b');
+delete from public.projects where code in ('rls-test-a', 'rls-test-b', 'rls-test-c');
 
 drop table if exists pg_temp.rls_results;
 create temp table rls_results (n serial, check_name text, result text);
@@ -224,6 +224,54 @@ begin
   end;
   insert into rls_results (check_name, result) values
     ('A cannot create projects', case when err is not null then 'PASS' else 'FAIL' end);
+
+  err := null;
+  begin
+    perform public.create_project_from_template('Sneaky 2');
+  exception when others then err := sqlerrm;
+  end;
+  insert into rls_results (check_name, result) values
+    ('A cannot call create_project_from_template', case when err is not null then 'PASS' else 'FAIL' end);
+
+  err := null;
+  begin
+    perform public.reset_project_progress(a_project, 'rls-test-a');
+  exception when others then err := sqlerrm;
+  end;
+  insert into rls_results (check_name, result) values
+    ('A cannot reset project progress', case when err is not null then 'PASS' else 'FAIL' end);
+
+  update public.project_phases set status = 'complete' where project_id = a_project;
+  get diagnostics n = row_count;
+  insert into rls_results (check_name, result) values
+    ('A cannot change phase status directly', case when n = 0 then 'PASS' else 'FAIL' end);
+
+  select count(*) into n from public.activity_log where project_id = a_project and action = 'step_done';
+  insert into rls_results (check_name, result) values
+    ('Ticking a step writes activity_log', case when n = 1 then 'PASS' else 'FAIL (' || n || ')' end);
+
+  select count(*) into n from public.project_overview;
+  insert into rls_results (check_name, result) values
+    ('A sees only its own project_overview row', case when n = 1 then 'PASS' else 'FAIL (' || n || ')' end);
+
+  insert into public.uploads (project_id, project_step_id, kind, link_url)
+  values (a_project, '00000000-0000-4000-b000-0000000000a1', 'link', 'https://example.com/a');
+  -- Step a1 is done at this point, so A can no longer delete this upload.
+  delete from public.uploads where project_id = a_project;
+  get diagnostics n = row_count;
+  insert into rls_results (check_name, result) values
+    ('A cannot delete uploads once the step is done', case when n = 0 then 'PASS' else 'FAIL' end);
+
+  update public.project_steps set done = false where id = '00000000-0000-4000-b000-0000000000a1';
+  delete from public.uploads where project_id = a_project;
+  get diagnostics n = row_count;
+  insert into rls_results (check_name, result) values
+    ('A can delete its own upload while the step is open', case when n = 1 then 'PASS' else 'FAIL (' || n || ')' end);
+
+  delete from public.uploads where project_id = b_project;
+  get diagnostics n = row_count;
+  insert into rls_results (check_name, result) values
+    ('A cannot delete B uploads', case when n = 0 then 'PASS' else 'FAIL' end);
 end;
 $$;
 
@@ -255,6 +303,45 @@ begin
   end;
   insert into rls_results (check_name, result) values
     ('Admin cannot change own role', case when err is not null then 'PASS' else 'FAIL' end);
+
+  -- Completing every step of a phase completes it (A client step + A FLO step).
+  update public.project_steps set done = true where project_id = '00000000-0000-4000-9000-00000000000a';
+  select count(*) into n from public.project_phases
+    where id = '00000000-0000-4000-a000-00000000000a' and status = 'complete';
+  insert into rls_results (check_name, result) values
+    ('Phase completes when all its steps are done', case when n = 1 then 'PASS' else 'FAIL' end);
+
+  -- Template copy
+  declare
+    c public.projects;
+  begin
+    c := public.create_project_from_template('RLS Test C', 'rls-test-c', 'CSM', null);
+    select count(*) into n from public.project_phases where project_id = c.id;
+    insert into rls_results (check_name, result) values
+      ('Template copy creates every phase', case when n = (select count(*) from public.template_phases) and n > 0 then 'PASS' else 'FAIL (' || n || ')' end);
+    select count(*) into n from public.project_steps where project_id = c.id;
+    insert into rls_results (check_name, result) values
+      ('Template copy creates every step', case when n = (select count(*) from public.template_steps) and n > 0 then 'PASS' else 'FAIL (' || n || ')' end);
+    select count(*) into n from public.project_phases where project_id = c.id and status = 'active';
+    insert into rls_results (check_name, result) values
+      ('Only the first phase starts active', case when n = 1 then 'PASS' else 'FAIL (' || n || ')' end);
+  end;
+
+  err := null;
+  begin
+    perform public.reset_project_progress('00000000-0000-4000-9000-00000000000a', 'wrong-code');
+  exception when others then err := sqlerrm;
+  end;
+  insert into rls_results (check_name, result) values
+    ('Reset refuses a wrong project code', case when err is not null then 'PASS' else 'FAIL' end);
+
+  perform public.reset_project_progress('00000000-0000-4000-9000-00000000000a', 'rls-test-a');
+  select count(*) into n from public.project_steps where project_id = '00000000-0000-4000-9000-00000000000a' and done;
+  insert into rls_results (check_name, result) values
+    ('Reset clears done flags', case when n = 0 then 'PASS' else 'FAIL' end);
+  select count(*) into n from public.project_steps where project_id = '00000000-0000-4000-9000-00000000000b' and done;
+  insert into rls_results (check_name, result) values
+    ('Reset leaves other projects alone', case when n = 0 and exists (select 1 from public.form_responses where project_id = '00000000-0000-4000-9000-00000000000b') then 'PASS' else 'FAIL' end);
 end;
 $$;
 
@@ -287,6 +374,6 @@ reset role;
 select set_config('request.jwt.claims', '', false);
 
 delete from auth.users where email like '%@rls-test.invalid';
-delete from public.projects where code in ('rls-test-a', 'rls-test-b');
+delete from public.projects where code in ('rls-test-a', 'rls-test-b', 'rls-test-c');
 
 select n as "#", check_name as "check", result from rls_results order by n;

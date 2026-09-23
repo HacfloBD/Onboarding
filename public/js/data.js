@@ -1,62 +1,190 @@
-// Database and Netlify Function access. RLS decides what each user can see.
+// The only module that reads or writes app data (tables, storage, RPCs,
+// realtime, Netlify Functions). RLS decides what each user can see.
 import { supabase } from './supabase.js';
 
+const BUCKET = 'customer-uploads';
+const PROJECT_COLS = 'id,code,name,csm_name,target_go_live,status';
+const PROFILE_COLS = 'user_id,email,full_name,role,project_id,active';
+
+function check({ data, error }) {
+  if (error) throw error;
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// People and projects
+// ---------------------------------------------------------------------------
+
 export async function loadProfile(userId) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('user_id,email,full_name,role,project_id,active')
-    .eq('user_id', userId)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
-}
-
-export async function loadProject(id) {
-  const { data, error } = await supabase
-    .from('projects')
-    .select('id,code,name,csm_name,target_go_live,status')
-    .eq('id', id)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
-}
-
-export async function listProjects() {
-  const { data, error } = await supabase
-    .from('projects')
-    .select('id,code,name,csm_name,target_go_live,status')
-    .eq('status', 'active')
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data;
-}
-
-export async function saveProject(p) {
-  const row = {
-    name: p.name,
-    code: p.code || null,
-    csm_name: p.csm_name || null,
-    target_go_live: p.target_go_live || null
-  };
-  const q = p.id
-    ? supabase.from('projects').update(row).eq('id', p.id)
-    : supabase.from('projects').insert({ ...row, created_by: p.created_by });
-  const { data, error } = await q.select('id,code,name,csm_name,target_go_live,status').single();
-  if (error) throw error;
-  return data;
+  return check(await supabase.from('profiles').select(PROFILE_COLS).eq('user_id', userId).maybeSingle());
 }
 
 export async function listProfiles() {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('user_id,email,full_name,role,project_id,active')
-    .order('role')
-    .order('full_name');
-  if (error) throw error;
-  return data;
+  return check(await supabase.from('profiles').select(PROFILE_COLS).order('full_name'));
 }
 
-// Calls a Netlify Function with the signed-in user's access token.
+export async function loadProject(id) {
+  return check(await supabase.from('projects').select(PROJECT_COLS).eq('id', id).maybeSingle());
+}
+
+// Admin list: one row per project with progress and ball-in-court counts.
+export async function listProjectOverview({ includeArchived = false } = {}) {
+  let q = supabase.from('project_overview').select('*').order('created_at', { ascending: false });
+  if (!includeArchived) q = q.eq('status', 'active');
+  return check(await q);
+}
+
+// Creates the project and copies the master template in one transaction.
+export async function createProject({ name, code, csm_name, target_go_live }) {
+  return check(await supabase.rpc('create_project_from_template', {
+    p_name: name,
+    p_code: code || null,
+    p_csm_name: csm_name || null,
+    p_target_go_live: target_go_live || null
+  }));
+}
+
+export async function updateProject(id, { name, code, csm_name, target_go_live }) {
+  return check(await supabase.from('projects')
+    .update({ name, code, csm_name: csm_name || null, target_go_live: target_go_live || null })
+    .eq('id', id).select(PROJECT_COLS).single());
+}
+
+export async function setProjectStatus(id, status) {
+  check(await supabase.from('projects').update({ status }).eq('id', id));
+}
+
+// ---------------------------------------------------------------------------
+// Journey data
+// ---------------------------------------------------------------------------
+
+export async function loadPhasesAndSteps(projectId) {
+  const [phases, steps] = await Promise.all([
+    supabase.from('project_phases').select('*').eq('project_id', projectId).order('position'),
+    supabase.from('project_steps').select('*').eq('project_id', projectId).order('position').order('created_at')
+  ]);
+  const ph = check(phases), st = check(steps);
+  return ph.map(p => ({ ...p, steps: st.filter(s => s.project_phase_id === p.id) }));
+}
+
+export async function loadForms(projectId) {
+  const rows = check(await supabase.from('form_responses').select('*').eq('project_id', projectId));
+  return Object.fromEntries(rows.map(r => [r.project_step_id, r]));
+}
+
+export async function loadUploads(projectId) {
+  return check(await supabase.from('uploads').select('*').eq('project_id', projectId).order('created_at'));
+}
+
+export async function loadSettings() {
+  const rows = check(await supabase.from('app_settings').select('key,value'));
+  return Object.fromEntries(rows.map(r => [r.key, r.value]));
+}
+
+export async function setStepDone(stepId, done) {
+  check(await supabase.from('project_steps').update({ done }).eq('id', stepId).select('id').single());
+}
+
+export async function setPhaseStatus(phaseId, status) {
+  check(await supabase.from('project_phases').update({ status }).eq('id', phaseId));
+}
+
+export async function saveForm(projectId, stepId, formType, data) {
+  return check(await supabase.from('form_responses')
+    .upsert({ project_id: projectId, project_step_id: stepId, form_type: formType, data }, { onConflict: 'project_step_id' })
+    .select('*').single());
+}
+
+// ---------------------------------------------------------------------------
+// Uploads (files go to customer-uploads/{project_id}/{step_id}/...)
+// ---------------------------------------------------------------------------
+
+export async function uploadFile(projectId, stepId, file) {
+  const safe = file.name.replace(/[^\w.\-]+/g, '_').slice(-120) || 'file';
+  const path = `${projectId}/${stepId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safe}`;
+  check(await supabase.storage.from(BUCKET).upload(path, file, {
+    contentType: file.type || 'application/octet-stream',
+    upsert: false
+  }));
+  const res = await supabase.from('uploads').insert({
+    project_id: projectId,
+    project_step_id: stepId,
+    kind: 'file',
+    storage_path: path,
+    file_name: file.name,
+    size_bytes: file.size
+  }).select('*').single();
+  if (res.error) {
+    await supabase.storage.from(BUCKET).remove([path]);
+    throw res.error;
+  }
+  return res.data;
+}
+
+export async function addLink(projectId, stepId, url) {
+  return check(await supabase.from('uploads')
+    .insert({ project_id: projectId, project_step_id: stepId, kind: 'link', link_url: url })
+    .select('*').single());
+}
+
+export async function deleteUpload(upload) {
+  if (upload.kind === 'file' && upload.storage_path) {
+    const { data, error } = await supabase.storage.from(BUCKET).remove([upload.storage_path]);
+    if (error) throw error;
+    if (!data || !data.length) throw new Error('You can no longer delete this file.');
+  }
+  const rows = check(await supabase.from('uploads').delete().eq('id', upload.id).select('id'));
+  if (!rows.length) throw new Error('You can no longer delete this file.');
+}
+
+// Signed URL valid for 10 minutes. With a file name it downloads instead of opening.
+export async function signedUrl(path, downloadName) {
+  const opts = downloadName ? { download: downloadName } : undefined;
+  return check(await supabase.storage.from(BUCKET).createSignedUrl(path, 600, opts)).signedUrl;
+}
+
+export async function signedUrls(paths) {
+  if (!paths.length) return {};
+  const rows = check(await supabase.storage.from(BUCKET).createSignedUrls(paths, 600));
+  return Object.fromEntries(rows.filter(r => r.signedUrl).map(r => [r.path, r.signedUrl]));
+}
+
+export function resourceUrl(path) {
+  return supabase.storage.from('resources').getPublicUrl(path).data.publicUrl;
+}
+
+// Admin only. Removes the project's stored files, then clears progress in one RPC.
+export async function resetProjectProgress(projectId, confirmCode) {
+  const uploads = check(await supabase.from('uploads').select('storage_path').eq('project_id', projectId).eq('kind', 'file'));
+  const paths = uploads.map(u => u.storage_path).filter(Boolean);
+  for (let i = 0; i < paths.length; i += 100) {
+    check(await supabase.storage.from(BUCKET).remove(paths.slice(i, i + 100)));
+  }
+  check(await supabase.rpc('reset_project_progress', { p_project_id: projectId, p_confirm_code: confirmCode }));
+}
+
+export async function logActivity(projectId, action, target, detail = {}) {
+  const { error } = await supabase.from('activity_log').insert({ project_id: projectId, action, target, detail });
+  if (error) console.warn('activity_log', error.message);
+}
+
+// ---------------------------------------------------------------------------
+// Realtime
+// ---------------------------------------------------------------------------
+
+export function subscribeProject(projectId, onChange) {
+  const ch = supabase.channel(`project-${projectId}`);
+  for (const table of ['project_steps', 'project_phases', 'form_responses', 'uploads']) {
+    ch.on('postgres_changes', { event: '*', schema: 'public', table, filter: `project_id=eq.${projectId}` }, onChange);
+  }
+  ch.subscribe();
+  return () => supabase.removeChannel(ch);
+}
+
+// ---------------------------------------------------------------------------
+// Netlify Functions (called with the signed-in user's access token)
+// ---------------------------------------------------------------------------
+
 export async function callFunction(name, body) {
   const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch(`/.netlify/functions/${name}`, {

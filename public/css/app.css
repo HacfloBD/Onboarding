@@ -220,3 +220,30 @@ input,select,textarea{font-family:var(--fb)}
 .pill-st{display:inline-block;padding:2px 10px;border-radius:var(--rf);font-size:.74rem;font-weight:600}
 .pill-st.on{background:var(--ok1);color:var(--ok6)}.pill-st.off{background:var(--g1);color:var(--g5)}
 .cplink{display:flex;gap:8px;align-items:center;margin-top:14px}.cplink input{flex:1;padding:8px 12px;border:1.5px solid var(--g2);border-radius:var(--r);font-size:.84rem;color:var(--g7);background:var(--g0)}
+
+/* Project switcher (admin), step widgets, uploads, admin list */
+.nav-sel{background:transparent;border:none;color:var(--cy4);font-family:var(--fb);font-size:.76rem;font-weight:600;max-width:220px;cursor:pointer;outline:none;padding:0}
+.nav-sel option{background:var(--flo-900);color:var(--w)}
+.ifrm{position:relative}
+.svd{position:absolute;top:6px;right:12px;font-size:.7rem;color:var(--g4)}
+.fg .rg{display:flex;gap:10px;flex-wrap:wrap}
+.fg .rg label{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1.5px solid var(--g2);border-radius:var(--r);background:var(--w);font-weight:500;font-size:.85rem;color:var(--g7);cursor:pointer;margin:0}
+.fg .rg input{width:auto;padding:0;box-shadow:none;accent-color:var(--tl)}
+.fg input:disabled,.fg select:disabled,.fg textarea:disabled{background:var(--g1);color:var(--g6)}
+.upg{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}.upg.one{grid-template-columns:1fr}
+.upc{background:var(--g0);border:1px solid var(--g2);border-radius:var(--r);padding:14px}
+.upc .upt{font-size:.84rem;font-weight:700;color:var(--g8)}
+.upc p{font-size:.78rem;color:var(--g5);margin:4px 0 0;line-height:1.5}
+.uprog{font-size:.8rem;color:var(--tl);margin-top:6px;min-height:0}
+.upl{margin-top:8px}
+.upl .uf{gap:10px}
+.upl .uf .btn{padding:4px 10px}
+.ufm{font-size:.72rem;font-weight:400;color:var(--g5);margin-top:1px}
+.uthumb{width:40px;height:40px;object-fit:contain;border-radius:6px;background:var(--w);border:1px solid var(--g2)}
+.subv{margin-top:6px}
+.sc.busy{opacity:.5;pointer-events:none}
+.pbar{height:6px;width:90px;background:var(--g1);border-radius:var(--rf);overflow:hidden;margin-bottom:3px}
+.pbar span{display:block;height:100%;background:var(--tl);border-radius:var(--rf)}
+.at tr.sel td{background:var(--cy0)}
+@media(max-width:760px){.upg{grid-template-columns:1fr}}
+.at .lnk{text-align:left;font-size:.88rem}

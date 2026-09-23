@@ -89,7 +89,7 @@
 </form>
 </div>
 </div>
-<div class="lalt"><button type="button" class="lnk" id="bModeSwitch">FLO staff sign in</button></div>
+<div class="lalt"><button type="button" class="lnk" id="bModeSwitch" data-to="vStaff">FLO staff sign in</button></div>
 </div></div></div>
 
 <div id="app" class="app">
@@ -97,13 +97,13 @@
 <div class="nav-l">
 <div class="nav-logo"><img src="/assets/brand/flo-logo-light.png" alt="FLO"></div>
 <div class="tabs" id="tabs">
-<button class="tab on" data-t="journey" onclick="goTab('journey')">Your Journey</button>
-<button class="tab" data-t="status" onclick="goTab('status')">Status</button>
-<button class="tab hid" data-t="admin" onclick="goTab('admin')" id="admTab">Admin</button>
+<button class="tab on" data-t="journey" data-action="tab">Your Journey</button>
+<button class="tab" data-t="status" data-action="tab">Status</button>
+<button class="tab hid" data-t="admin" data-action="tab" id="admTab">Admin</button>
 </div></div>
 <div class="nav-r">
-<div class="nav-badge">📌 <span id="nPr">Project</span></div>
-<div class="nav-u" onclick="logout()" title="Sign out"><div class="nav-av" id="nAv">?</div><div><div class="nav-nm" id="nNm">User</div><div class="nav-rl" id="nRl">Role</div></div></div>
+<div class="nav-badge" id="nBadge">📌 <span id="nPr">Project</span></div>
+<div class="nav-u" data-action="logout" title="Sign out"><div class="nav-av" id="nAv">?</div><div><div class="nav-nm" id="nNm">User</div><div class="nav-rl" id="nRl">Role</div></div></div>
 </div></nav>
 <div class="main">
 <div id="tJourney" class="tabC">
@@ -114,7 +114,7 @@
 <div style="margin-bottom:24px;animation:fadeUp .4s"><h1 style="font-size:1.5rem;font-weight:700;color:var(--g9)">📊 Status Overview</h1><p style="color:var(--g5);margin-top:4px;font-size:.9rem">Your onboarding progress at a glance.</p></div>
 <div class="sban">
 <div class="rw"><svg width="110" height="110"><circle class="rbg" cx="55" cy="55" r="48"/><circle class="rfill" id="rF" cx="55" cy="55" r="48" stroke-dasharray="301.59" stroke-dashoffset="301.59"/></svg><div class="rt"><div class="rp" id="rP">0%</div><div class="rlb">Complete</div></div></div>
-<div class="si"><h2>Onboarding Progress</h2><p class="ssub" id="sS">Getting started</p><div class="sts"><div class="st"><div class="sv" id="sF">0/8</div><div class="sl">Forms</div></div><div class="st"><div class="sv" id="sD">--</div><div class="sl">Days Left</div></div><div class="st"><div class="sv" id="sPh">0/7</div><div class="sl">Phases</div></div></div></div>
+<div class="si"><h2>Onboarding Progress</h2><p class="ssub" id="sS">Getting started</p><div class="sts"><div class="st"><div class="sv" id="sF">--</div><div class="sl">Forms</div></div><div class="st"><div class="sv" id="sD">--</div><div class="sl">Days Left</div></div><div class="st"><div class="sv" id="sPh">--</div><div class="sl">Phases</div></div></div></div>
 <div class="bb" id="bB"><div class="bi">🏐</div><div class="bl" id="bL">--</div><div class="bs" id="bS">--</div></div>
 </div>
 <div id="jNx2"></div>
@@ -123,14 +123,15 @@
 <div id="tAdmin" class="tabC hid">
 <div style="margin-bottom:24px"><h1 style="font-size:1.5rem;font-weight:700;color:var(--g9)">⚙️ Admin Panel</h1><p style="color:var(--g5);margin-top:4px;font-size:.9rem">Configure project and manage onboarding.</p></div>
 <div class="ag"><div class="as"><div class="ast">Management</div>
-<button class="ani on" data-a="project" onclick="aGo('project')"><span>📁</span> Project Setup</button>
-<button class="ani" data-a="users" onclick="aGo('users')"><span>👥</span> Users</button>
-<button class="ani" data-a="phases" onclick="aGo('phases')"><span>🔄</span> Phases</button>
+<button class="ani on" data-a="projects" data-action="admin-nav"><span>🗂️</span> Projects</button>
+<button class="ani" data-a="setup" data-action="admin-nav"><span>📁</span> Project Setup</button>
+<button class="ani" data-a="users" data-action="admin-nav"><span>👥</span> Users</button>
+<button class="ani" data-a="phases" data-action="admin-nav"><span>🔄</span> Phases</button>
 </div><div class="am" id="aC"></div></div>
 </div>
 </div></div>
 <div class="tc" id="tC"></div>
-<div id="mW" class="mo hid" onclick="cMo(event)"><div class="modal" id="mC" onclick="event.stopPropagation()"></div></div>
+<div id="mW" class="mo hid"><div class="modal" id="mC"></div></div>
 
 </body>
 </html>

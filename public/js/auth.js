@@ -175,7 +175,7 @@ export function initAuth(h) {
   hooks = h;
   wireOtp();
 
-  $('bModeSwitch').addEventListener('click', e => { clearMsg(); show(e.target.dataset.to); });
+  $('bModeSwitch').addEventListener('click', e => { clearMsg(); show(e.currentTarget.dataset.to || 'vStaff'); });
   $('bOtherEmail').addEventListener('click', () => { clearMsg(); clearOtp(); show('vEmail'); $('lE').focus(); });
   $('bForgot').addEventListener('click', () => { clearMsg(); $('fE').value = $('sE').value; show('vForgot'); });
   $('bBackStaff').addEventListener('click', () => { clearMsg(); show('vStaff'); });

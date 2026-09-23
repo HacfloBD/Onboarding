@@ -15,9 +15,9 @@ export function adminClient() {
   return client;
 }
 
-// Verifies the caller's Supabase JWT and that they are an active admin.
-// Returns { caller } on success or { response } to return immediately.
-export async function requireAdmin(req) {
+// Verifies the caller's Supabase JWT and that they have an active profile.
+// Returns { caller, sb } on success or { response } to return immediately.
+export async function requireUser(req) {
   if (req.method !== 'POST') return { response: json(405, { error: 'Method not allowed' }) };
 
   const auth = req.headers.get('authorization') || '';
@@ -37,18 +37,24 @@ export async function requireAdmin(req) {
 
   const { data: profile, error: profErr } = await sb
     .from('profiles')
-    .select('user_id,email,full_name,role,active')
+    .select('user_id,email,full_name,role,project_id,active')
     .eq('user_id', userData.user.id)
     .maybeSingle();
   if (profErr) {
     console.error(profErr);
     return { response: json(500, { error: 'Could not verify your account' }) };
   }
-  if (!profile || !profile.active || profile.role !== 'admin') {
-    return { response: json(403, { error: 'Admins only' }) };
-  }
+  if (!profile || !profile.active) return { response: json(403, { error: 'Your account is not active' }) };
 
   return { caller: profile, sb };
+}
+
+// Same as requireUser, plus the caller must be an admin.
+export async function requireAdmin(req) {
+  const r = await requireUser(req);
+  if (r.response) return r;
+  if (r.caller.role !== 'admin') return { response: json(403, { error: 'Admins only' }) };
+  return r;
 }
 
 export async function logActivity(sb, entry) {
