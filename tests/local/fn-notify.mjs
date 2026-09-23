@@ -1,0 +1,42 @@
+import http from 'node:http';
+import { jwt, USERS, sql } from './harness.mjs';
+import crypto from 'node:crypto';
+const SECRET='local-test-secret-local-test-secret-123456';
+const b64=o=>Buffer.from(JSON.stringify(o)).toString('base64url');
+const h=b64({alg:'HS256',typ:'JWT'}),p=b64({role:'service_role',iss:'test',exp:Math.floor(Date.now()/1000)+3600});
+const SERVICE=`${h}.${p}.${crypto.createHmac('sha256',SECRET).update(`${h}.${p}`).digest('base64url')}`;
+const proxy=http.createServer(async(q,r)=>{let body='';for await(const c of q)body+=c;
+ if(q.url.startsWith('/auth/v1/user')){const t=(q.headers.authorization||'').slice(7);const [hh,pp,ss]=t.split('.');const ok=ss===crypto.createHmac('sha256',SECRET).update(`${hh}.${pp}`).digest('base64url');if(!ok){r.writeHead(401);return r.end('{}')}const c=JSON.parse(Buffer.from(pp,'base64url'));r.writeHead(200,{'content-type':'application/json'});return r.end(JSON.stringify({id:c.sub,email:c.email,aud:'authenticated'}))}
+ if(q.url.startsWith('/rest/v1/')){const res=await fetch('http://127.0.0.1:3001'+q.url.slice(8),{method:q.method,headers:{...Object.fromEntries(Object.entries(q.headers).filter(([k])=>!['host','content-length','connection'].includes(k)))},body:['GET','HEAD'].includes(q.method)?undefined:body});r.writeHead(res.status,{'content-type':res.headers.get('content-type')||'application/json'});return r.end(await res.text())}
+ r.writeHead(404);r.end('{}')});
+await new Promise(r=>proxy.listen(54330,r));
+Object.assign(process.env,{SUPABASE_URL:'http://127.0.0.1:54330',SUPABASE_SERVICE_ROLE_KEY:SERVICE,RESEND_API_KEY:'re_test',MAIL_FROM:'FLO <onboarding@hacflo.com>',PORTAL_URL:'https://hacflo-onboarding.netlify.app'});
+const sent=[];const realFetch=globalThis.fetch;
+globalThis.fetch=async(u,o)=>{if(String(u).startsWith('https://api.resend.com')){sent.push(JSON.parse(o.body));return new Response('{"id":"x"}',{status:200})}return realFetch(u,o)};
+const notify=(await import(process.cwd()+'/netlify/functions/notify-admins.mjs')).default;
+const create=(await import(process.cwd()+'/netlify/functions/admin-create-user.mjs')).default;
+const call=async(fn,u,body)=>{const res=await fn(new Request('https://x/f',{method:'POST',headers:{authorization:'Bearer '+(u?jwt(u):''),'content-type':'application/json'},body:JSON.stringify(body)}));return res.status+' '+await res.text()};
+const ok=(l,v,x='')=>console.log((v?'PASS ':'FAIL ')+l+(x?'  ['+x+']':''));
+// Setup: project via RPC as admin is not possible here; create directly
+sql("delete from profiles where role<>'admin'; delete from projects; delete from activity_log;");
+sql("insert into auth.users (id,email,aud,role) values ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','csm@hacflo.com','authenticated','authenticated') on conflict do nothing");
+sql("insert into profiles (user_id,email,full_name,role) values ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','csm@hacflo.com','Casey Manager','admin') on conflict do nothing");
+const pA=sql("insert into projects (name,csm_name) values ('City of Springfield','Casey Manager') returning id").split('\n')[0];
+const pB=sql("insert into projects (name) values ('Town of Shelbyville') returning id").split('\n')[0];
+sql(`insert into profiles (user_id,email,full_name,role,project_id) values ('${USERS.jane.id}','${USERS.jane.email}','Jane Smith','client_lead','${pA}'),('${USERS.bart.id}','${USERS.bart.email}','Bart Simpson','client_lead','${pB}')`);
+const ph=sql(`insert into project_phases (project_id,position,name,owner,status) values ('${pA}',1,'P1','both','active') returning id`).split('\n')[0];
+const st=sql(`insert into project_steps (project_id,project_phase_id,position,text,owner,type) values ('${pA}','${ph}',1,'Schedule','client','form_schedule_session') returning id`).split('\n')[0];
+sql(`insert into form_responses (project_id,project_step_id,form_type,data) values ('${pA}','${st}','form_schedule_session','{"preferredDate":"2026-10-05","preferredTime":"10:00","mode":"virtual","attendees":"<b>Jane</b>"}')`);
+ok('no token -> 401', (await call(notify,null,{kind:'upload'})).startsWith('401'));
+ok('Bart cannot notify for Springfield step', (await call(notify,USERS.bart,{kind:'session_request',step_id:st})).startsWith('403'));
+let r=await call(notify,USERS.jane,{kind:'session_request',step_id:st});
+ok('Jane session request emails CSM only', r.startsWith('200') && sent.length===1 && sent[0].to[0]==='csm@hacflo.com', r+' to='+sent.map(s=>s.to).join(','));
+ok('email escapes user text', sent[0].html.includes('&lt;b&gt;Jane&lt;/b&gt;') && sent[0].subject==='Session request: City of Springfield');
+r=await call(notify,USERS.jane,{kind:'session_request',step_id:st});
+ok('same slot not emailed twice', r.includes('duplicate') && sent.length===1, r);
+const up=sql(`insert into uploads (project_id,project_step_id,kind,storage_path,file_name,size_bytes,uploaded_by) values ('${pA}','${st}','file','${pA}/${st}/f.csv','f.csv',2048,'${USERS.jane.id}') returning id`).split('\n')[0];
+ok('Bart cannot trigger email for Jane upload', (await call(notify,USERS.bart,{kind:'upload',upload_ids:[up]})).includes('"emailSent":false') && sent.length===1);
+r=await call(notify,USERS.jane,{kind:'upload',upload_ids:[up]});
+ok('Jane upload emails admins', r.includes('"emailSent":true') && sent.length===2 && sent[1].subject==='New upload: City of Springfield', r);
+ok('client calling admin-create-user gets 403', (await call(create,USERS.jane,{full_name:'X',email:'x@y.gov',role:'client_it',project_id:pA})).startsWith('403'));
+proxy.close();

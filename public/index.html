@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FLO | Customer Onboarding Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/brand/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/app.css">
+<script src="/config.js"></script>
+<link rel="modulepreload" href="/vendor/supabase-js-2.117.1.js">
+<script type="module" src="/js/app.js"></script>
+</head>
+<body class="booting">
+<div id="lp" class="login-page">
+<div class="nbg"><canvas id="nc"></canvas></div>
+<div class="ll">
+<div class="logo" style="margin-bottom:8px"><img src="/assets/brand/flo-logo-light.png" alt="FLO"></div>
+<div class="logo-sub">Onboarding Portal</div>
+<div class="pill"><span class="dot"></span> BPA Compliance Platform</div>
+<h1>Onboarding,<br><em>simplified.</em></h1>
+<p class="sub">Track your progress, submit your data, and go live with confidence. Step by step, at your own pace.</p>
+<div class="feats">
+<div class="feat"><div class="fi">📊</div><span>Real-time progress across all phases</span></div>
+<div class="feat"><div class="fi">📋</div><span>One master spreadsheet with all intake forms</span></div>
+<div class="feat"><div class="fi">🏐</div><span>Always know whose court the ball is in</span></div>
+<div class="feat"><div class="fi">🚀</div><span>Work at your own pace, no waiting on us</span></div>
+</div></div>
+<div class="lr"><div class="lwrap">
+<div class="lcard">
+<div id="lErr" class="lerr"></div>
+<div id="lInfo" class="linfo"></div>
+
+<div id="vEmail" class="lview">
+<h2>Sign in to your project</h2>
+<p class="ls">Enter your work email and we'll send you a one-time code. No password needed.</p>
+<form id="fEmail" novalidate>
+<div class="fg"><label for="lE">Work email</label><input id="lE" type="email" autocomplete="email" placeholder="you@yourorganization.gov" required></div>
+<button type="submit" class="btn btn-p btn-lg btn-full">Email me a code</button>
+</form>
+</div>
+
+<div id="vCode" class="lview hid">
+<h2>Enter your code</h2>
+<p class="ls">Sent to <strong id="lCodeEmail"></strong></p>
+<form id="fCode" novalidate>
+<div class="otp" id="otp">
+<input inputmode="numeric" autocomplete="one-time-code" maxlength="6" aria-label="Digit 1">
+<input inputmode="numeric" maxlength="6" aria-label="Digit 2">
+<input inputmode="numeric" maxlength="6" aria-label="Digit 3">
+<input inputmode="numeric" maxlength="6" aria-label="Digit 4">
+<input inputmode="numeric" maxlength="6" aria-label="Digit 5">
+<input inputmode="numeric" maxlength="6" aria-label="Digit 6">
+</div>
+<button type="submit" class="btn btn-p btn-lg btn-full">Verify</button>
+</form>
+<div class="lrow"><button type="button" class="lnk" id="bResend">Resend code</button><button type="button" class="lnk" id="bOtherEmail">Use a different email</button></div>
+</div>
+
+<div id="vStaff" class="lview hid">
+<h2>FLO staff sign in</h2>
+<p class="ls">Sign in with your FLO staff email and password.</p>
+<form id="fStaff" novalidate>
+<div class="fg"><label for="sE">Email</label><input id="sE" type="email" autocomplete="username" placeholder="you@hacflo.com" required></div>
+<div class="fg"><label for="sP">Password</label><input id="sP" type="password" autocomplete="current-password" placeholder="Enter your password" required></div>
+<button type="submit" class="btn btn-p btn-lg btn-full">Sign In &rarr;</button>
+</form>
+<div class="lrow"><button type="button" class="lnk" id="bForgot">Forgot password?</button></div>
+</div>
+
+<div id="vForgot" class="lview hid">
+<h2>Reset your password</h2>
+<p class="ls">Enter your FLO staff email and we'll send you a link to set a new password.</p>
+<form id="fForgot" novalidate>
+<div class="fg"><label for="fE">Email</label><input id="fE" type="email" autocomplete="username" placeholder="you@hacflo.com" required></div>
+<button type="submit" class="btn btn-p btn-lg btn-full">Send reset link</button>
+</form>
+<div class="lrow"><button type="button" class="lnk" id="bBackStaff">Back to sign in</button></div>
+</div>
+
+<div id="vNewPw" class="lview hid">
+<h2 id="lNewPwTitle">Set a new password</h2>
+<p class="ls">Use at least 10 characters.</p>
+<form id="fNewPw" novalidate>
+<div class="fg"><label for="nP">New password</label><input id="nP" type="password" autocomplete="new-password" minlength="10" required></div>
+<div class="fg"><label for="nP2">Confirm new password</label><input id="nP2" type="password" autocomplete="new-password" minlength="10" required></div>
+<button type="submit" class="btn btn-p btn-lg btn-full">Save password</button>
+</form>
+</div>
+</div>
+<div class="lalt"><button type="button" class="lnk" id="bModeSwitch" data-to="vStaff">FLO staff sign in</button></div>
+</div></div></div>
+
+<div id="app" class="app">
+<nav class="nav">
+<div class="nav-l">
+<div class="nav-logo"><img src="/assets/brand/flo-logo-light.png" alt="FLO"></div>
+<div class="tabs" id="tabs">
+<button class="tab on" data-t="journey" data-action="tab">Your Journey</button>
+<button class="tab" data-t="status" data-action="tab">Status</button>
+<button class="tab hid" data-t="admin" data-action="tab" id="admTab">Admin</button>
+</div></div>
+<div class="nav-r">
+<div class="nav-badge" id="nBadge">📌 <span id="nPr">Project</span></div>
+<div class="nav-u" data-action="logout" title="Sign out"><div class="nav-av" id="nAv">?</div><div><div class="nav-nm" id="nNm">User</div><div class="nav-rl" id="nRl">Role</div></div></div>
+</div></nav>
+<div class="main">
+<div id="tJourney" class="tabC">
+<div id="obb" class="obb hid" role="status"></div>
+<div style="margin-bottom:24px;animation:fadeUp .4s"><h1 id="jG" style="font-size:1.5rem;font-weight:700;color:var(--g9)">Welcome! 👋</h1><p style="color:var(--g5);margin-top:4px;font-size:.9rem">Follow each phase to get your BPA Compliance Platform live. You can browse any phase and work at your own pace.</p></div>
+<div id="jRes" class="resrow"></div>
+<div id="jNx"></div><div id="jPh"></div>
+</div>
+<div id="tStatus" class="tabC hid">
+<div style="margin-bottom:24px;animation:fadeUp .4s"><h1 style="font-size:1.5rem;font-weight:700;color:var(--g9)">📊 Status Overview</h1><p style="color:var(--g5);margin-top:4px;font-size:.9rem">Your onboarding progress at a glance.</p></div>
+<div class="sban">
+<div class="rw"><svg width="110" height="110"><circle class="rbg" cx="55" cy="55" r="48"/><circle class="rfill" id="rF" cx="55" cy="55" r="48" stroke-dasharray="301.59" stroke-dashoffset="301.59"/></svg><div class="rt"><div class="rp" id="rP">0%</div><div class="rlb">Complete</div></div></div>
+<div class="si"><h2>Onboarding Progress</h2><p class="ssub" id="sS">Getting started</p><div class="sts"><div class="st"><div class="sv" id="sF">--</div><div class="sl">Forms</div></div><div class="st"><div class="sv" id="sD">--</div><div class="sl">Days Left</div></div><div class="st"><div class="sv" id="sPh">--</div><div class="sl">Phases</div></div></div></div>
+<div class="bb" id="bB"><div class="bi">🏐</div><div class="bl" id="bL">--</div><div class="bs" id="bS">--</div></div>
+</div>
+<div id="jNx2"></div>
+<div class="two" id="sCols"></div>
+</div>
+<div id="tAdmin" class="tabC hid">
+<div style="margin-bottom:24px"><h1 style="font-size:1.5rem;font-weight:700;color:var(--g9)">⚙️ Admin Panel</h1><p style="color:var(--g5);margin-top:4px;font-size:.9rem">Configure project and manage onboarding.</p></div>
+<div class="ag"><div class="as"><div class="ast">Management</div>
+<button class="ani on" data-a="projects" data-action="admin-nav"><span>🗂️</span> Projects</button>
+<button class="ani" data-a="setup" data-action="admin-nav"><span>📁</span> Project Setup</button>
+<button class="ani" data-a="users" data-action="admin-nav"><span>👥</span> Users</button>
+<button class="ani" data-a="phases" data-action="admin-nav"><span>🔄</span> Phases</button>
+<button class="ani" data-a="activity" data-action="admin-nav"><span>🕘</span> Activity</button>
+<div class="ast" style="margin-top:14px">Master</div>
+<button class="ani" data-a="template" data-action="admin-nav"><span>🧩</span> Phase Template</button>
+<button class="ani" data-a="resources" data-action="admin-nav"><span>📚</span> Resources</button>
+</div><div class="am" id="aC"></div></div>
+</div>
+</div></div>
+<div class="tc" id="tC"></div>
+<div id="mW" class="mo hid"><div class="modal" id="mC" role="dialog" aria-modal="true" tabindex="-1"></div></div>
+
+</body>
+</html>
