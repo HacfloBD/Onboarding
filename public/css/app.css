@@ -198,3 +198,25 @@ input,select,textarea{font-family:var(--fb)}
 @media(max-width:1024px){.login-page{flex-direction:column}.ll{padding:40px 28px}.ll h1{font-size:2.2rem}.lr{width:100%;padding:0 28px 40px}.sban{flex-direction:column;gap:18px;text-align:center}.sts{justify-content:center}.two{grid-template-columns:1fr}.ag{grid-template-columns:1fr}.as{position:static}}
 @media(max-width:640px){.main{padding:16px}.nav{padding:0 16px}.nav-badge{display:none}}
 .hid{display:none!important}
+
+/* Sign-in modes (customer email code, FLO staff password) */
+.booting #lp,.booting #app{visibility:hidden;animation:bootReveal 0s 5s forwards}
+@keyframes bootReveal{to{visibility:visible}}
+.lwrap{width:100%}
+.linfo{background:var(--cy0);color:var(--tl);border:1px solid rgba(45,212,191,.25);padding:10px 16px;border-radius:var(--r);font-size:.85rem;margin-bottom:16px;display:none}
+.lerr.on,.linfo.on{display:block}
+.otp{display:flex;gap:8px;justify-content:space-between;margin-bottom:20px}
+.otp input{width:100%;min-width:0;height:54px;text-align:center;font-family:var(--fd);font-size:1.4rem;font-weight:700;color:var(--flo-900);border:1.5px solid var(--g2);border-radius:var(--r);background:var(--w);outline:none;transition:var(--t)}
+.otp input:focus{border-color:var(--cy);box-shadow:0 0 0 3px rgba(45,212,191,.12)}
+.lrow{display:flex;justify-content:space-between;gap:12px;margin-top:16px}
+.lrow .lnk:only-child{margin:0 auto}
+.lnk{background:none;border:none;padding:0;color:var(--tl);font-size:.84rem;font-weight:600;cursor:pointer}
+.lnk:hover{color:var(--tlh);text-decoration:underline}
+.lnk:disabled{color:var(--g4);cursor:not-allowed;text-decoration:none}
+.lalt{text-align:center;margin-top:18px}
+.lalt .lnk{color:rgba(255,255,255,.55);font-weight:500}
+.lalt .lnk:hover{color:var(--cy4)}
+.btn.busy{opacity:.6;pointer-events:none}
+.pill-st{display:inline-block;padding:2px 10px;border-radius:var(--rf);font-size:.74rem;font-weight:600}
+.pill-st.on{background:var(--ok1);color:var(--ok6)}.pill-st.off{background:var(--g1);color:var(--g5)}
+.cplink{display:flex;gap:8px;align-items:center;margin-top:14px}.cplink input{flex:1;padding:8px 12px;border:1.5px solid var(--g2);border-radius:var(--r);font-size:.84rem;color:var(--g7);background:var(--g0)}

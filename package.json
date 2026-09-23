@@ -1,0 +1,16 @@
+{
+  "name": "flo-onboarding-portal",
+  "private": true,
+  "description": "FLO Onboarding Portal. Static site in public/, Netlify Functions in netlify/functions/.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/write-config.mjs",
+    "dev": "netlify dev"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.117.1",
+    "nodemailer": "10.0.10"
+  }
+}

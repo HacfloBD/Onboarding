@@ -9,9 +9,10 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/assets/brand/apple-touch-icon.png">
 <link rel="stylesheet" href="/css/app.css">
 <script src="/config.js"></script>
+<link rel="modulepreload" href="/vendor/supabase-js-2.117.1.js">
 <script type="module" src="/js/app.js"></script>
 </head>
-<body>
+<body class="booting">
 <div id="lp" class="login-page">
 <div class="nbg"><canvas id="nc"></canvas></div>
 <div class="ll">
@@ -26,16 +27,69 @@
 <div class="feat"><div class="fi">🏐</div><span>Always know whose court the ball is in</span></div>
 <div class="feat"><div class="fi">🚀</div><span>Work at your own pace, no waiting on us</span></div>
 </div></div>
-<div class="lr"><div class="lcard">
+<div class="lr"><div class="lwrap">
+<div class="lcard">
+<div id="lErr" class="lerr"></div>
+<div id="lInfo" class="linfo"></div>
+
+<div id="vEmail" class="lview">
 <h2>Sign in to your project</h2>
-<p class="ls">Use the credentials shared by your FLO team.</p>
-<div id="lErr" class="lerr">Invalid credentials. Check your project code, email, and password.</div>
-<div class="fg"><label>Project Code</label><input id="lC" placeholder="e.g. SPR-2026-001" autocomplete="off"><div class="hint">From your Customer Success Manager</div></div>
-<div class="fg"><label>Email</label><input id="lE" type="email" placeholder="you@yourorganization.gov"></div>
-<div class="fg"><label>Password</label><input id="lP" type="password" placeholder="Enter your password"></div>
-<button class="btn btn-p btn-lg btn-full" onclick="doLogin()">Sign In &rarr;</button>
-<div class="ldiv">first time setup</div>
-<button class="btn btn-d btn-full" onclick="demoLogin()">🔧 Admin Setup</button>
+<p class="ls">Enter your work email and we'll send you a one-time code. No password needed.</p>
+<form id="fEmail" novalidate>
+<div class="fg"><label for="lE">Work email</label><input id="lE" type="email" autocomplete="email" placeholder="you@yourorganization.gov" required></div>
+<button type="submit" class="btn btn-p btn-lg btn-full">Email me a code</button>
+</form>
+</div>
+
+<div id="vCode" class="lview hid">
+<h2>Enter your code</h2>
+<p class="ls">Sent to <strong id="lCodeEmail"></strong></p>
+<form id="fCode" novalidate>
+<div class="otp" id="otp">
+<input inputmode="numeric" autocomplete="one-time-code" maxlength="6" aria-label="Digit 1">
+<input inputmode="numeric" maxlength="6" aria-label="Digit 2">
+<input inputmode="numeric" maxlength="6" aria-label="Digit 3">
+<input inputmode="numeric" maxlength="6" aria-label="Digit 4">
+<input inputmode="numeric" maxlength="6" aria-label="Digit 5">
+<input inputmode="numeric" maxlength="6" aria-label="Digit 6">
+</div>
+<button type="submit" class="btn btn-p btn-lg btn-full">Verify</button>
+</form>
+<div class="lrow"><button type="button" class="lnk" id="bResend">Resend code</button><button type="button" class="lnk" id="bOtherEmail">Use a different email</button></div>
+</div>
+
+<div id="vStaff" class="lview hid">
+<h2>FLO staff sign in</h2>
+<p class="ls">Sign in with your FLO staff email and password.</p>
+<form id="fStaff" novalidate>
+<div class="fg"><label for="sE">Email</label><input id="sE" type="email" autocomplete="username" placeholder="you@hacflo.com" required></div>
+<div class="fg"><label for="sP">Password</label><input id="sP" type="password" autocomplete="current-password" placeholder="Enter your password" required></div>
+<button type="submit" class="btn btn-p btn-lg btn-full">Sign In &rarr;</button>
+</form>
+<div class="lrow"><button type="button" class="lnk" id="bForgot">Forgot password?</button></div>
+</div>
+
+<div id="vForgot" class="lview hid">
+<h2>Reset your password</h2>
+<p class="ls">Enter your FLO staff email and we'll send you a link to set a new password.</p>
+<form id="fForgot" novalidate>
+<div class="fg"><label for="fE">Email</label><input id="fE" type="email" autocomplete="username" placeholder="you@hacflo.com" required></div>
+<button type="submit" class="btn btn-p btn-lg btn-full">Send reset link</button>
+</form>
+<div class="lrow"><button type="button" class="lnk" id="bBackStaff">Back to sign in</button></div>
+</div>
+
+<div id="vNewPw" class="lview hid">
+<h2 id="lNewPwTitle">Set a new password</h2>
+<p class="ls">Use at least 10 characters.</p>
+<form id="fNewPw" novalidate>
+<div class="fg"><label for="nP">New password</label><input id="nP" type="password" autocomplete="new-password" minlength="10" required></div>
+<div class="fg"><label for="nP2">Confirm new password</label><input id="nP2" type="password" autocomplete="new-password" minlength="10" required></div>
+<button type="submit" class="btn btn-p btn-lg btn-full">Save password</button>
+</form>
+</div>
+</div>
+<div class="lalt"><button type="button" class="lnk" id="bModeSwitch">FLO staff sign in</button></div>
 </div></div></div>
 
 <div id="app" class="app">

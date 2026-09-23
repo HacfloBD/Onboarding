@@ -37,24 +37,48 @@ FLO is a backflow prevention (BPA) and cross-connection control compliance SaaS 
 ## Layout
 
 ```
-public/                 Netlify publish dir
-  index.html            markup
-  css/app.css           all styles
-  js/app.js             app logic (ES module entry)
-  js/network-canvas.js  login page background animation
-  js/escape.js          escapeHtml()
-  assets/brand/         logos, favicon, apple-touch-icon
-  assets/files/         FLO_Onboarding_Forms.xlsx (master spreadsheet download)
-  config.js             generated at build, gitignored
+public/                   Netlify publish dir (everything here reaches the browser)
+  index.html              markup
+  css/app.css             all styles
+  js/app.js               app logic (ES module entry)
+  js/auth.js              sign-in flows (customer email code, staff password, reset, invite)
+  js/data.js              Supabase table reads/writes and Netlify Function calls
+  js/supabase.js          the one browser Supabase client (anon key only)
+  js/network-canvas.js    login page background animation
+  js/escape.js            escapeHtml()
+  vendor/                 pinned, vendored libraries (supabase-js single-file ESM bundle)
+  assets/brand/           logos, favicon, apple-touch-icon
+  assets/files/           FLO_Onboarding_Forms.xlsx (master spreadsheet download)
+  config.js               generated at build, gitignored
 scripts/write-config.mjs
-netlify/functions/      serverless functions (.mjs)
-netlify.toml            build, functions, headers
-legacy/                 original single-file app, reference only, do not edit
-brand/                  original brand files
-docs/                   manual, overview, build prompts
-supabase/seed/          phase template seed
+netlify/functions/        serverless functions (.mjs), one file per endpoint
+netlify/lib/              shared server code (service-role client + admin guard, mailer, email bodies)
+netlify.toml              build, functions, headers
+package.json              server-side deps for functions only (@supabase/supabase-js, nodemailer)
+supabase/migrations/      SQL migrations, run in order
+supabase/setup.sql        all migrations combined (regenerate after editing a migration)
+supabase/tests/           rls_checks.sql
+supabase/email-templates/ Supabase Auth email templates (OTP, reset password)
+supabase/seed/            phase-template.json (source for 0004_seed.sql)
+legacy/                   original single-file app, reference only, do not edit
+brand/                    original brand files
+docs/                     manual, overview, build prompts
 ```
+
+## Auth and data model (from Prompt 2)
+- Customers sign in with email + 6-digit code (`signInWithOtp` with `shouldCreateUser: false`). The UI always shows the same neutral message so it never reveals who is a customer. FLO staff sign in with email + password.
+- Users are only created by admins through `netlify/functions/admin-create-user.mjs` (public sign-ups are disabled in Supabase). Deactivation goes through `admin-deactivate-user.mjs` (profile inactive + auth ban, reversible).
+- Every admin function must call `requireAdmin(req)` from `netlify/lib/supabase-admin.mjs` first and log to `activity_log`.
+- RLS is the security boundary, not the UI. Helpers: `is_admin()`, `my_project_id()`, `my_role()` (SECURITY DEFINER, empty search_path). Guard triggers stop clients editing anything but `project_steps.done`, and stop anyone changing their own role, project or active flag.
+- Storage: `customer-uploads` (private, first path segment = project_id) and `resources` (public read, admin write).
+- Any schema change: add a new numbered migration, regenerate `supabase/setup.sql`, extend `supabase/tests/rls_checks.sql` if access rules change.
+
+## Environment variables (Netlify)
+- Browser (via config.js): `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `PORTAL_URL`.
+- Functions only: `SUPABASE_SERVICE_ROLE_KEY`, `MAIL_FROM`, and either `RESEND_API_KEY` or `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS` (optional `SMTP_SECURE`). With neither, welcome emails are skipped and the admin UI offers "Copy portal link".
+- Before opening a PR, check that `grep -rIlE "service_role|RESEND|re_[A-Za-z0-9]{16,}" public/` finds nothing.
 
 ## Notes on the current JS
 - `public/js/app.js` is an ES module. Inline handlers resolve names on `window`, so the functions they call are exposed via `Object.assign(window, {...})` at the bottom of the file, and the state object `D` via a `window` getter/setter. When adding a new function called from inline HTML, add it there (or better, use `addEventListener`).
-- State still lives in localStorage under `flo_v3` until Supabase lands.
+- Phase/step progress still lives in localStorage under `flo_v3` until Prompt 3. Users, projects and sign-in are in Supabase.
+- New UI code wires events with `addEventListener` (see `auth.js`, admin panels in `app.js`).

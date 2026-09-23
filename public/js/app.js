@@ -1,9 +1,11 @@
 import './network-canvas.js';
 import { escapeHtml } from './escape.js';
+import { initAuth, signOut } from './auth.js';
+import { listProjects, saveProject, listProfiles, callFunction } from './data.js';
+import { portalUrl } from './supabase.js';
 
 const E={
 project:{id:'',name:'',clientName:'',csmName:'',startDate:'',targetGoLive:'',state:'',testerCompanies:0,facilities:0,legacySystem:'',testingFrequency:'',testingFrequencyNotes:''},
-users:[{id:1,name:'FLO Admin',email:'admin@flo.com',role:'admin',password:'admin123'}],
 kickoff:{orgName:'',serviceArea:'',state:'',projectLead:'',projectLeadTitle:'',projectLeadEmail:'',projectLeadPhone:'',itContact:'',itContactEmail:'',numTesters:'',numFacilities:'',legacySystem:'',testingFrequency:'',testingFrequencyNotes:'',jurisdictionalNotes:'',roles:''},
 phases:[
 {id:1,name:'Kick-off & Discovery',short:'Kick-off',owner:'both',status:'active',dur:'Week 1',desc:'Let\'s get aligned. Fill in your organization details, confirm key contacts, and tell us about your current setup. This information helps us configure everything correctly.',
@@ -63,26 +65,31 @@ forms:{uploaded:false,fileName:null,fileUrl:null},
 notices:{senderName:'',replyTo:''}
 };
 
-let U=null,D=null;
-function init(){const s=localStorage.getItem('flo_v3');D=s?JSON.parse(s):JSON.parse(JSON.stringify(E));save()}
+let U=null,D=null,P=null;
+// Phase and step progress still lives in localStorage until Prompt 3. Users and projects are in Supabase.
+function init(){const s=localStorage.getItem('flo_v3');D=s?JSON.parse(s):JSON.parse(JSON.stringify(E));delete D.users;save()}
 function save(){localStorage.setItem('flo_v3',JSON.stringify(D))}
-function reset(){localStorage.removeItem('flo_v3');init();toast('Reset','info');if(U)render()}
+function reset(){localStorage.removeItem('flo_v3');init();if(P)useProject(P);toast('Reset','info');if(U)render()}
 
-function doLogin(){const c=document.getElementById('lC').value.trim(),e=document.getElementById('lE').value.trim().toLowerCase(),p=document.getElementById('lP').value;
-const u=D.users.find(x=>x.email.toLowerCase()===e&&x.password===p);
-if(u&&(D.project.id===c||u.role==='admin'))enter(u);else document.getElementById('lErr').style.display='block'}
-function demoLogin(){enter(D.users.find(u=>u.role==='admin')||D.users[0])}
-function enter(u){U=u;document.getElementById('lp').style.display='none';document.getElementById('app').classList.add('on');render()}
-function logout(){U=null;document.getElementById('lp').style.display='';document.getElementById('app').classList.remove('on');document.getElementById('lErr').style.display='none';['lC','lE','lP'].forEach(i=>document.getElementById(i).value='')}
+function enter(u,project){U=u;if(project)useProject(project);document.getElementById('lp').style.display='none';document.getElementById('app').classList.add('on');render()}
+function leaveApp(){U=null;P=null;document.getElementById('lp').style.display='';document.getElementById('app').classList.remove('on');cMo()}
+function logout(){signOut()}
 
-const RL={client_lead:'Client Lead',client_it:'IT Contact',admin:'FLO Admin',csm:'CSM',utility_staff:'Utility Staff'};
+// The selected Supabase project drives the name, CSM and go-live shown in the journey and status views.
+function useProject(p){P=p;D.project.id=p.code;D.project.name=p.name;D.project.csmName=p.csm_name||'';D.project.targetGoLive=p.target_go_live||'';save()}
+const slug=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+const ADMIN_PROJECT_KEY='flo_admin_project';
+function prefGet(){try{return localStorage.getItem(ADMIN_PROJECT_KEY)}catch{return null}}
+function prefSet(id){try{id?localStorage.setItem(ADMIN_PROJECT_KEY,id):localStorage.removeItem(ADMIN_PROJECT_KEY)}catch{}}
+
+const RL={client_lead:'Client Lead',client_it:'IT Contact',admin:'FLO Admin',utility_staff:'Utility Staff'};
 function render(){
-const ia=U.role==='admin'||U.role==='csm',fn=U.name.split(' ')[0],ini=U.name.split(' ').map(n=>n[0]).join('');
+const ia=U.role==='admin',fn=U.name.split(' ')[0],ini=U.name.split(' ').map(n=>n[0]).join('');
 const h=new Date().getHours(),g=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
 document.getElementById('nPr').textContent=D.project.name||'Setup required';
 document.getElementById('nAv').textContent=ini;document.getElementById('nNm').textContent=U.name;document.getElementById('nRl').textContent=RL[U.role]||U.role;
 document.getElementById('admTab').classList.toggle('hid',!ia);document.getElementById('jG').textContent=`${g}, ${fn}! 👋`;
-rJ();rSt();if(ia)aGo('project');goTab(D.project.id?'journey':'admin');
+rJ();rSt();if(ia)aGo('project');goTab(ia?'admin':'journey');
 }
 
 function rJ(){
@@ -187,7 +194,7 @@ function tP(pid){document.getElementById('p-'+pid).classList.toggle('open')}
 
 function tgl(pid,sid){
 const p=D.phases.find(x=>x.id===pid),s=p.steps.find(x=>x.id===sid);
-if(s.owner==='flo'&&U.role!=='admin'&&U.role!=='csm')return;
+if(s.owner==='flo'&&U.role!=='admin')return;
 s.done=!s.done;
 if(p.steps.every(x=>x.done)){p.status='complete';const nx=D.phases.find(x=>x.id===pid+1);if(nx&&nx.status==='pending')nx.status='active';save();render();showComp(pid);return}
 if(p.status==='pending'){p.status='active'}
@@ -241,58 +248,113 @@ document.getElementById('sCols').innerHTML=`
 function goTab(t){document.querySelectorAll('.tabC').forEach(e=>e.classList.add('hid'));document.querySelectorAll('.tab').forEach(e=>e.classList.remove('on'));
 document.getElementById('t'+t[0].toUpperCase()+t.slice(1)).classList.remove('hid');const tb=document.querySelector(`.tab[data-t="${t}"]`);if(tb)tb.classList.add('on')}
 
-function aGo(s){document.querySelectorAll('.ani').forEach(e=>e.classList.remove('on'));document.querySelector(`.ani[data-a="${s}"]`)?.classList.add('on');
-const c=document.getElementById('aC');
-if(s==='project'){const p=D.project;c.innerHTML=`<div class="ash"><h2>Project Setup</h2><button class="btn btn-sm btn-s" onclick="reset()">🔄 Reset</button></div>
+let aTok=0;
+const aLoading='<div style="padding:24px;color:var(--g4);font-size:.9rem">Loading...</div>';
+const aErr=e=>`<div class="lerr on">Could not load: ${escapeHtml(e.message||e)}</div>`;
+async function aGo(s){document.querySelectorAll('.ani').forEach(e=>e.classList.remove('on'));document.querySelector(`.ani[data-a="${s}"]`)?.classList.add('on');
+const c=document.getElementById('aC'),tk=++aTok;
+if(s==='project'){c.innerHTML=aLoading;let list;try{list=await listProjects()}catch(e){if(tk===aTok)c.innerHTML=aErr(e);return}if(tk!==aTok)return;
+if(!P){const pr=list.find(x=>x.id===prefGet());if(pr){useProject(pr);document.getElementById('nPr').textContent=pr.name;rJ();rSt()}}
+else if(!list.find(x=>x.id===P.id))P=null;
+const p=P||{name:'',code:'',csm_name:'',target_go_live:''};
+c.innerHTML=`<div class="ash"><h2>Project Setup</h2><button class="btn btn-sm btn-s" onclick="reset()">🔄 Reset</button></div>
+<div class="fg"><label>Project</label><select id="pSel"><option value="">+ New project</option>${list.map(x=>`<option value="${x.id}" ${P&&P.id===x.id?'selected':''}>${escapeHtml(x.name)}</option>`).join('')}</select></div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-<div class="fg"><label>Project Code *</label><input id="pId" value="${escapeHtml(p.id)}" placeholder="SPR-2026-001"></div>
 <div class="fg"><label>Organization Name *</label><input id="pNm" value="${escapeHtml(p.name)}" placeholder="City of Springfield"></div>
-<div class="fg"><label>CSM Name</label><input id="pCs" value="${escapeHtml(p.csmName)}"></div>
-<div class="fg"><label>Target Go-Live</label><input type="date" id="pGL" value="${escapeHtml(p.targetGoLive)}"></div>
+<div class="fg"><label>Project Code</label><input id="pCd" value="${escapeHtml(p.code)}" placeholder="city-of-springfield"><div class="hint">Filled in from the name. Customers never see or type it.</div></div>
+<div class="fg"><label>CSM Name</label><input id="pCs" value="${escapeHtml(p.csm_name)}"></div>
+<div class="fg"><label>Target Go-Live</label><input type="date" id="pGL" value="${escapeHtml(p.target_go_live)}"></div>
 </div>
 <h3 style="margin:20px 0 12px;font-size:.95rem">Create First Customer User</h3>
-<p style="font-size:.84rem;color:var(--g5);margin-bottom:12px">This person will receive access to the portal. Their password will be set to <strong>welcome123</strong>.</p>
+<p style="font-size:.84rem;color:var(--g5);margin-bottom:12px">This person will receive access to the portal. They sign in with their email and a one-time code, no password needed.</p>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-<div class="fg"><label>Full Name *</label><input id="cuNm" placeholder="Jane Smith"></div>
-<div class="fg"><label>Email *</label><input id="cuEm" type="email" placeholder="jsmith@springfield.gov"></div>
+<div class="fg"><label>Full Name</label><input id="cuNm" placeholder="Jane Smith"></div>
+<div class="fg"><label>Email</label><input id="cuEm" type="email" placeholder="jsmith@springfield.gov"></div>
 </div>
-<div style="margin-top:14px;display:flex;gap:10px"><button class="btn btn-p" onclick="savePrj()">Save & Create User</button></div>`}
-else if(s==='users'){c.innerHTML=`<div class="ash"><h2>Users (${D.users.length})</h2><button class="btn btn-sm btn-a" onclick="addUsr()">+ Add</button></div>
-<table class="at"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Pass</th><th></th></tr></thead><tbody>${D.users.map(u=>`<tr><td><strong>${escapeHtml(u.name)}</strong></td><td style="color:var(--g5)">${escapeHtml(u.email)}</td><td>${escapeHtml(RL[u.role]||u.role)}</td><td style="color:var(--g4);font-size:.82rem">${escapeHtml(u.password)}</td><td>${u.id!==U.id?`<button class="btn btn-g btn-sm" style="color:var(--e5)" onclick="D.users=D.users.filter(x=>x.id!==${u.id});save();aGo('users');toast('Removed','info')">×</button>`:''}</td></tr>`).join('')}</tbody></table>`}
+<div style="margin-top:14px;display:flex;gap:10px"><button class="btn btn-p" id="pSave">Save & Create User</button></div>`;
+const nm=document.getElementById('pNm'),cd=document.getElementById('pCd');let codeEdited=!!p.code;
+nm.addEventListener('input',()=>{if(!codeEdited)cd.value=slug(nm.value)});
+cd.addEventListener('input',()=>{codeEdited=cd.value.trim()!==''});
+document.getElementById('pSel').addEventListener('change',e=>{const pr=list.find(x=>x.id===e.target.value);prefSet(pr?pr.id:null);if(pr){useProject(pr);document.getElementById('nPr').textContent=pr.name;rJ();rSt()}else P=null;aGo('project')});
+document.getElementById('pSave').addEventListener('click',e=>savePrj(e.currentTarget))}
+else if(s==='users'){c.innerHTML=aLoading;let us,ps;try{[us,ps]=await Promise.all([listProfiles(),listProjects()])}catch(e){if(tk===aTok)c.innerHTML=aErr(e);return}if(tk!==aTok)return;
+const pn=id=>{const x=ps.find(y=>y.id===id);return x?x.name:id?'(archived project)':'FLO'};
+c.innerHTML=`<div class="ash"><h2>Users (${us.length})</h2><button class="btn btn-sm btn-a" id="uAdd">+ Add</button></div>
+<table class="at"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Project</th><th>Status</th><th></th></tr></thead><tbody>${us.map(u=>`<tr><td><strong>${escapeHtml(u.full_name||'')}</strong></td><td style="color:var(--g5)">${escapeHtml(u.email)}</td><td>${escapeHtml(RL[u.role]||u.role)}</td><td style="color:var(--g5);font-size:.84rem">${escapeHtml(pn(u.project_id))}</td><td><span class="pill-st ${u.active?'on':'off'}">${u.active?'Active':'Inactive'}</span></td><td>${u.user_id!==U.id?`<button class="btn btn-g btn-sm" style="color:${u.active?'var(--e5)':'var(--tl)'}" data-act="${u.active?'off':'on'}" data-id="${escapeHtml(u.user_id)}">${u.active?'Deactivate':'Reactivate'}</button>`:''}</td></tr>`).join('')}</tbody></table>`;
+document.getElementById('uAdd').addEventListener('click',()=>addUsr(ps));
+c.querySelectorAll('button[data-act]').forEach(b=>b.addEventListener('click',()=>setActive(us.find(u=>u.user_id===b.dataset.id),b.dataset.act==='on')))}
 else if(s==='phases'){const sts=['pending','active','complete'];c.innerHTML=`<div class="ash"><h2>Phases</h2></div>
 <table class="at"><thead><tr><th>#</th><th>Phase</th><th>Status</th></tr></thead><tbody>${D.phases.map(p=>`<tr><td>${p.id}</td><td>${p.name}</td>
 <td><select onchange="D.phases.find(x=>x.id===${p.id}).status=this.value;save();rJ();rSt()" style="padding:4px 8px;border:1px solid var(--g3);border-radius:var(--rf);font-size:.82rem">
 ${sts.map(x=>`<option value="${x}" ${p.status===x?'selected':''}>${x}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table>`}
 }
 
-function savePrj(){
-const id=document.getElementById('pId').value.trim(),nm=document.getElementById('pNm').value.trim();
-if(!id||!nm){toast('Project code and name required','err');return}
-D.project.id=id;D.project.name=nm;D.project.csmName=document.getElementById('pCs').value.trim();D.project.targetGoLive=document.getElementById('pGL').value;
-const un=document.getElementById('cuNm').value.trim(),ue=document.getElementById('cuEm').value.trim();
-if(un&&ue){
-const exists=D.users.find(u=>u.email.toLowerCase()===ue.toLowerCase());
-if(!exists){D.users.push({id:Date.now(),name:un,email:ue,role:'client_lead',password:'welcome123'});toast(`Invite sent to ${escapeHtml(ue)} (password: welcome123)`,'ok')}
-}
-save();document.getElementById('nPr').textContent=nm;rSt();toast('Project saved','ok');
+async function savePrj(btn){
+const nm=document.getElementById('pNm').value.trim(),code=slug(document.getElementById('pCd').value||nm);
+if(!nm){toast('Organization name is required','err');return}
+const un=document.getElementById('cuNm').value.trim(),ue=document.getElementById('cuEm').value.trim().toLowerCase();
+if((un||ue)&&!(un&&ue)){toast('Enter both a name and an email for the first user','err');return}
+btn.classList.add('busy');
+try{
+let saved;try{saved=await saveProject({id:P&&P.id,name:nm,code,csm_name:document.getElementById('pCs').value.trim(),target_go_live:document.getElementById('pGL').value,created_by:U.id})}
+catch(e){toast(e.code==='23505'?'That project code is already in use. Pick another.':'Could not save the project: '+escapeHtml(e.message),'err');return}
+prefSet(saved.id);useProject(saved);document.getElementById('nPr').textContent=saved.name;rSt();toast('Project saved','ok');
+if(un&&ue)await createUser({full_name:un,email:ue,role:'client_lead',project_id:saved.id});
+}finally{btn.classList.remove('busy')}
+aGo('project');
 }
 
-function addUsr(){
+async function createUser(body){
+try{const r=await callFunction('admin-create-user',body);
+if(r.invited)toast(`Invitation sent to ${escapeHtml(body.email)}. They will set a password from the email.`,'ok');
+else if(r.emailSent)toast(`Welcome email sent to ${escapeHtml(body.email)}`,'ok');
+else showPortalLink(body.email,r.emailConfigured);
+return true}
+catch(e){toast(escapeHtml(e.message),'err');return false}
+}
+
+function showPortalLink(email,configured){
+const link=portalUrl();
+document.getElementById('mC').innerHTML=`<h2>User created</h2>
+<p style="font-size:.9rem;color:var(--g6);margin-top:8px">${configured?'The welcome email could not be sent':'Email not configured'}: share the portal link manually with <strong>${escapeHtml(email)}</strong>. They sign in with that email address and a one-time code.</p>
+<div class="cplink"><input id="cpL" readonly value="${escapeHtml(link)}"><button class="btn btn-p btn-sm" id="cpB">Copy portal link</button></div>
+<div class="ma"><button class="btn btn-s" onclick="cMo()">Done</button></div>`;
+document.getElementById('cpB').addEventListener('click',async()=>{const i=document.getElementById('cpL');try{await navigator.clipboard.writeText(i.value)}catch{i.select();document.execCommand('copy')}toast('Portal link copied','ok')});
+document.getElementById('mW').classList.remove('hid');
+}
+
+function addUsr(projects){
+const cur=P&&P.id;
 document.getElementById('mC').innerHTML=`<h2>Add User</h2>
 <div class="fg"><label>Name</label><input id="nuN"></div>
 <div class="fg"><label>Email</label><input id="nuE" type="email"></div>
-<div class="fg"><label>Role</label><select id="nuR"><option value="client_lead">Client Lead</option><option value="client_it">IT Contact</option><option value="utility_staff">Utility Staff</option><option value="csm">CSM (FLO)</option><option value="admin">Admin (FLO)</option></select></div>
-<p style="font-size:.84rem;color:var(--g5);margin-top:8px">Password will be set to <strong>welcome123</strong></p>
-<div class="ma"><button class="btn btn-s" onclick="cMo()">Cancel</button><button class="btn btn-p" onclick="const n=document.getElementById('nuN').value.trim(),e=document.getElementById('nuE').value.trim();if(!n||!e){toast('Required','err');return}D.users.push({id:Date.now(),name:n,email:e,role:document.getElementById('nuR').value,password:'welcome123'});save();cMo();aGo('users');toast('User added (password: welcome123)','ok')">Add</button></div>`;
+<div class="fg"><label>Role</label><select id="nuR"><option value="client_lead">Client Lead</option><option value="client_it">IT Contact</option><option value="utility_staff">Utility Staff</option><option value="admin">FLO Admin</option></select></div>
+<div class="fg" id="nuPg"><label>Project</label><select id="nuP">${projects.map(x=>`<option value="${x.id}" ${x.id===cur?'selected':''}>${escapeHtml(x.name)}</option>`).join('')}</select>${projects.length?'':'<div class="hint">Create a project in Project Setup first.</div>'}</div>
+<p style="font-size:.84rem;color:var(--g5);margin-top:8px" id="nuH">Customers sign in with their email and a one-time code. No password needed.</p>
+<div class="ma"><button class="btn btn-s" onclick="cMo()">Cancel</button><button class="btn btn-p" id="nuAdd">Add</button></div>`;
+const r=document.getElementById('nuR'),sync=()=>{const a=r.value==='admin';document.getElementById('nuPg').classList.toggle('hid',a);document.getElementById('nuH').textContent=a?'FLO admins get an invitation email and set their own password.':'Customers sign in with their email and a one-time code. No password needed.'};
+r.addEventListener('change',sync);
+document.getElementById('nuAdd').addEventListener('click',async e=>{const n=document.getElementById('nuN').value.trim(),em=document.getElementById('nuE').value.trim().toLowerCase(),role=r.value,pid=role==='admin'?null:document.getElementById('nuP').value;
+if(!n||!em){toast('Name and email are required','err');return}if(role!=='admin'&&!pid){toast('Pick a project','err');return}
+const b=e.currentTarget;b.classList.add('busy');cMo();const ok=await createUser({full_name:n,email:em,role,project_id:pid});b.classList.remove('busy');if(ok)aGo('users')});
+document.getElementById('mW').classList.remove('hid');
+}
+
+function setActive(u,on){
+if(!u)return;
+document.getElementById('mC').innerHTML=`<h2>${on?'Reactivate':'Deactivate'} user</h2>
+<p style="font-size:.9rem;color:var(--g6);margin-top:8px">${on?`<strong>${escapeHtml(u.full_name||u.email)}</strong> will be able to sign in again.`:`<strong>${escapeHtml(u.full_name||u.email)}</strong> will be signed out and won't be able to sign in until reactivated.`}</p>
+<div class="ma"><button class="btn btn-s" onclick="cMo()">Cancel</button><button class="btn ${on?'btn-p':'btn-d'}" id="daGo">${on?'Reactivate':'Deactivate'}</button></div>`;
+document.getElementById('daGo').addEventListener('click',async()=>{cMo();try{await callFunction('admin-deactivate-user',{user_id:u.user_id,reactivate:on});toast(on?'User reactivated':'User deactivated','ok')}catch(e){toast(escapeHtml(e.message),'err')}aGo('users')});
 document.getElementById('mW').classList.remove('hid');
 }
 
 function cMo(e){if(e&&e.target!==document.getElementById('mW'))return;document.getElementById('mW').classList.add('hid')}
 function toast(m,t='info'){const c=document.getElementById('tC'),d=document.createElement('div');d.className=`tst t${t}`;d.innerHTML=`<span>${t==='ok'?'✓':t==='err'?'✕':'ℹ'}</span> ${m}`;c.appendChild(d);setTimeout(()=>{d.style.opacity='0';d.style.transform='translateX(20px)';d.style.transition='.3s';setTimeout(()=>d.remove(),300)},3500)}
 
-document.addEventListener('DOMContentLoaded',()=>{init();['lC','lE','lP'].forEach(i=>document.getElementById(i).addEventListener('keypress',e=>{if(e.key==='Enter')doLogin()}))});
+document.addEventListener('DOMContentLoaded',()=>{init();initAuth({onSignedIn:enter,onSignedOut:leaveApp})});
 
 // Inline onclick/onchange handlers in the markup and in rendered templates
 // resolve names on window, so expose them explicitly from this module.
-Object.assign(window,{doLogin,demoLogin,logout,goTab,aGo,cMo,jump,tgl,tP,save,rJ,rSt,doUpload,saveLink,reset,savePrj,addUsr,toast});
+Object.assign(window,{logout,goTab,aGo,cMo,jump,tgl,tP,save,rJ,rSt,doUpload,saveLink,reset,toast});
 Object.defineProperty(window,'D',{get:()=>D,set:v=>{D=v},configurable:true});
