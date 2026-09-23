@@ -1,0 +1,32 @@
+import http from 'node:http';
+import { jwt, USERS, sql } from './harness.mjs';
+import crypto from 'node:crypto';
+const SECRET='local-test-secret-local-test-secret-123456';
+const b64=o=>Buffer.from(JSON.stringify(o)).toString('base64url');
+const h=b64({alg:'HS256',typ:'JWT'}),p=b64({role:'service_role',iss:'test',exp:Math.floor(Date.now()/1000)+3600});
+const SERVICE=`${h}.${p}.${crypto.createHmac('sha256',SECRET).update(`${h}.${p}`).digest('base64url')}`;
+const proxy=http.createServer(async(q,r)=>{let body='';for await(const c of q)body+=c;
+ if(q.url.startsWith('/auth/v1/user')){const t=(q.headers.authorization||'').slice(7);const [hh,pp,ss]=t.split('.');const ok=ss===crypto.createHmac('sha256',SECRET).update(`${hh}.${pp}`).digest('base64url');if(!ok){r.writeHead(401);return r.end('{}')}const c=JSON.parse(Buffer.from(pp,'base64url'));r.writeHead(200,{'content-type':'application/json'});return r.end(JSON.stringify({id:c.sub,email:c.email,aud:'authenticated'}))}
+ if(q.url.startsWith('/rest/v1/')){const res=await fetch('http://127.0.0.1:3001'+q.url.slice(8),{method:q.method,headers:{...Object.fromEntries(Object.entries(q.headers).filter(([k])=>!['host','content-length','connection'].includes(k)))},body:['GET','HEAD'].includes(q.method)?undefined:body});r.writeHead(res.status,{'content-type':res.headers.get('content-type')||'application/json'});return r.end(await res.text())}
+ r.writeHead(404);r.end('{}')});
+await new Promise(r=>proxy.listen(54330,r));
+Object.assign(process.env,{SUPABASE_URL:'http://127.0.0.1:54330',SUPABASE_SERVICE_ROLE_KEY:SERVICE,RESEND_API_KEY:'re_test',MAIL_FROM:'FLO <onboarding@hacflo.com>',PORTAL_URL:'https://hacflo-onboarding.netlify.app'});
+const sent=[];const realFetch=globalThis.fetch;
+globalThis.fetch=async(u,o)=>{if(String(u).startsWith('https://api.resend.com')){sent.push(JSON.parse(o.body));return new Response('{"id":"x"}',{status:200})}return realFetch(u,o)};
+const notify=(await import(process.cwd()+'/netlify/functions/notify-admins.mjs')).default;
+const create=(await import(process.cwd()+'/netlify/functions/admin-create-user.mjs')).default;
+const call=async(fn,u,body)=>{const res=await fn(new Request('https://x/f',{method:'POST',headers:{authorization:'Bearer '+(u?jwt(u):''),'content-type':'application/json'},body:JSON.stringify(body)}));return res.status+' '+await res.text()};
+const ok=(l,v,x='')=>console.log((v?'PASS ':'FAIL ')+l+(x?'  ['+x+']':''));
+sql("delete from profiles where role<>'admin'; delete from projects; delete from activity_log;");
+const pA=sql("insert into projects (name) values ('City of Springfield') returning id").split(String.fromCharCode(10))[0];
+sql(`insert into profiles (user_id,email,full_name,role,project_id) values ('${USERS.jane.id}','${USERS.jane.email}','Jane Smith','client_lead','${pA}'),('${USERS.bart.id}','${USERS.bart.email}','Bart Simpson','client_it','${pA}')`);
+const ph=sql(`insert into project_phases (project_id,position,name,owner,status) values ('${pA}',1,'P1','both','active') returning id`).split(String.fromCharCode(10))[0];
+const st=sql(`insert into project_steps (project_id,project_phase_id,position,text,owner,type,done,completed_on_behalf,completed_by,completed_at) values ('${pA}','${ph}',1,'Provide your organization details','client','form_org_details',true,true,'${USERS.admin.id}',now()) returning id`).split(String.fromCharCode(10))[0];
+const st2=sql(`insert into project_steps (project_id,project_phase_id,position,text,owner,type,done,completed_by,completed_at) values ('${pA}','${ph}',2,'Jane did this','client','none',true,'${USERS.jane.id}',now()) returning id`).split(String.fromCharCode(10))[0];
+ok('client cannot send the on-behalf note', (await call(notify,USERS.jane,{kind:'step_completed_on_behalf',step_id:st})).startsWith('403'));
+ok('refused for a step not completed on behalf', (await call(notify,USERS.admin,{kind:'step_completed_on_behalf',step_id:st2})).startsWith('400'));
+let r=await call(notify,USERS.admin,{kind:'step_completed_on_behalf',step_id:st});
+ok('admin note goes to the Client Lead only', r.includes('"emailSent":true') && sent.length===1 && sent[0].to.length===1 && sent[0].to[0]===USERS.jane.email, r);
+ok('note content', sent[0].subject==='FLO completed a step for you: Provide your organization details' && sent[0].html.includes('1a Provide your organization details') && sent[0].html.includes('FLO (Olivier) on behalf of your team'));
+ok('note logged on behalf', sql(`select count(*) from activity_log where action='customer_notified' and on_behalf and actor_id='${USERS.admin.id}'`)==='1');
+proxy.close();
