@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FLO | Customer Onboarding Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/brand/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/app.css">
+<script src="/config.js"></script>
+<script type="module" src="/js/app.js"></script>
+</head>
+<body>
+<div id="lp" class="login-page">
+<div class="nbg"><canvas id="nc"></canvas></div>
+<div class="ll">
+<div class="logo" style="margin-bottom:8px"><img src="/assets/brand/flo-logo-light.png" alt="FLO"></div>
+<div class="logo-sub">Onboarding Portal</div>
+<div class="pill"><span class="dot"></span> BPA Compliance Platform</div>
+<h1>Onboarding,<br><em>simplified.</em></h1>
+<p class="sub">Track your progress, submit your data, and go live with confidence. Step by step, at your own pace.</p>
+<div class="feats">
+<div class="feat"><div class="fi">📊</div><span>Real-time progress across all phases</span></div>
+<div class="feat"><div class="fi">📋</div><span>One master spreadsheet with all intake forms</span></div>
+<div class="feat"><div class="fi">🏐</div><span>Always know whose court the ball is in</span></div>
+<div class="feat"><div class="fi">🚀</div><span>Work at your own pace, no waiting on us</span></div>
+</div></div>
+<div class="lr"><div class="lcard">
+<h2>Sign in to your project</h2>
+<p class="ls">Use the credentials shared by your FLO team.</p>
+<div id="lErr" class="lerr">Invalid credentials. Check your project code, email, and password.</div>
+<div class="fg"><label>Project Code</label><input id="lC" placeholder="e.g. SPR-2026-001" autocomplete="off"><div class="hint">From your Customer Success Manager</div></div>
+<div class="fg"><label>Email</label><input id="lE" type="email" placeholder="you@yourorganization.gov"></div>
+<div class="fg"><label>Password</label><input id="lP" type="password" placeholder="Enter your password"></div>
+<button class="btn btn-p btn-lg btn-full" onclick="doLogin()">Sign In &rarr;</button>
+<div class="ldiv">first time setup</div>
+<button class="btn btn-d btn-full" onclick="demoLogin()">🔧 Admin Setup</button>
+</div></div></div>
+
+<div id="app" class="app">
+<nav class="nav">
+<div class="nav-l">
+<div class="nav-logo"><img src="/assets/brand/flo-logo-light.png" alt="FLO"></div>
+<div class="tabs" id="tabs">
+<button class="tab on" data-t="journey" onclick="goTab('journey')">Your Journey</button>
+<button class="tab" data-t="status" onclick="goTab('status')">Status</button>
+<button class="tab hid" data-t="admin" onclick="goTab('admin')" id="admTab">Admin</button>
+</div></div>
+<div class="nav-r">
+<div class="nav-badge">📌 <span id="nPr">Project</span></div>
+<div class="nav-u" onclick="logout()" title="Sign out"><div class="nav-av" id="nAv">?</div><div><div class="nav-nm" id="nNm">User</div><div class="nav-rl" id="nRl">Role</div></div></div>
+</div></nav>
+<div class="main">
+<div id="tJourney" class="tabC">
+<div style="margin-bottom:24px;animation:fadeUp .4s"><h1 id="jG" style="font-size:1.5rem;font-weight:700;color:var(--g9)">Welcome! 👋</h1><p style="color:var(--g5);margin-top:4px;font-size:.9rem">Follow each phase to get your BPA Compliance Platform live. You can browse any phase and work at your own pace.</p></div>
+<div id="jNx"></div><div id="jPh"></div>
+</div>
+<div id="tStatus" class="tabC hid">
+<div style="margin-bottom:24px;animation:fadeUp .4s"><h1 style="font-size:1.5rem;font-weight:700;color:var(--g9)">📊 Status Overview</h1><p style="color:var(--g5);margin-top:4px;font-size:.9rem">Your onboarding progress at a glance.</p></div>
+<div class="sban">
+<div class="rw"><svg width="110" height="110"><circle class="rbg" cx="55" cy="55" r="48"/><circle class="rfill" id="rF" cx="55" cy="55" r="48" stroke-dasharray="301.59" stroke-dashoffset="301.59"/></svg><div class="rt"><div class="rp" id="rP">0%</div><div class="rlb">Complete</div></div></div>
+<div class="si"><h2>Onboarding Progress</h2><p class="ssub" id="sS">Getting started</p><div class="sts"><div class="st"><div class="sv" id="sF">0/8</div><div class="sl">Forms</div></div><div class="st"><div class="sv" id="sD">--</div><div class="sl">Days Left</div></div><div class="st"><div class="sv" id="sPh">0/7</div><div class="sl">Phases</div></div></div></div>
+<div class="bb" id="bB"><div class="bi">🏐</div><div class="bl" id="bL">--</div><div class="bs" id="bS">--</div></div>
+</div>
+<div id="jNx2"></div>
+<div class="two" id="sCols"></div>
+</div>
+<div id="tAdmin" class="tabC hid">
+<div style="margin-bottom:24px"><h1 style="font-size:1.5rem;font-weight:700;color:var(--g9)">⚙️ Admin Panel</h1><p style="color:var(--g5);margin-top:4px;font-size:.9rem">Configure project and manage onboarding.</p></div>
+<div class="ag"><div class="as"><div class="ast">Management</div>
+<button class="ani on" data-a="project" onclick="aGo('project')"><span>📁</span> Project Setup</button>
+<button class="ani" data-a="users" onclick="aGo('users')"><span>👥</span> Users</button>
+<button class="ani" data-a="phases" onclick="aGo('phases')"><span>🔄</span> Phases</button>
+</div><div class="am" id="aC"></div></div>
+</div>
+</div></div>
+<div class="tc" id="tC"></div>
+<div id="mW" class="mo hid" onclick="cMo(event)"><div class="modal" id="mC" onclick="event.stopPropagation()"></div></div>
+
+</body>
+</html>
