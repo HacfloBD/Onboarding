@@ -1,6 +1,9 @@
 // POST { kind: 'session_request', step_id } | { kind: 'upload', upload_ids: [...] }
-// Any signed-in user on the project (or an admin). Emails FLO admins: the
-// project's CSM when csm_name matches an admin's name, otherwise every active admin.
+//   Any signed-in user on the project (or an admin). Emails FLO admins: the
+//   project's CSM when csm_name matches an admin's name, otherwise every active admin.
+// POST { kind: 'step_completed_on_behalf', step_id }
+//   Admins only. Emails the project's active Client Lead(s) that FLO completed a
+//   step on their behalf. Sent from MAIL_FROM like every app email.
 import { json, readJson, portalUrl } from '../lib/http.mjs';
 import { requireUser } from '../lib/supabase-admin.mjs';
 import { sendMail } from '../lib/mailer.mjs';
@@ -16,6 +19,7 @@ export default async req => {
   const body = (await readJson(req)) || {};
   if (body.kind === 'session_request') return sessionRequest(req, sb, caller, body);
   if (body.kind === 'upload') return uploadNotice(req, sb, caller, body);
+  if (body.kind === 'step_completed_on_behalf') return completedOnBehalf(req, sb, caller, body);
   return json(400, { error: 'Unknown notification' });
 };
 
@@ -118,5 +122,48 @@ async function uploadNotice(req, sb, caller, body) {
     portalUrl: portalUrl(req)
   });
   const r = await sendAll(to, mail);
+  return json(200, { emailSent: r.sent > 0, emailConfigured: r.configured });
+}
+
+async function completedOnBehalf(req, sb, caller, body) {
+  if (caller.role !== 'admin') return json(403, { error: 'Admins only' });
+  if (!UUID.test(String(body.step_id || ''))) return json(400, { error: 'Missing step_id' });
+
+  const { data: step } = await sb.from('project_steps')
+    .select('id,project_id,text,done,completed_on_behalf,completed_by,completed_at,archived_at')
+    .eq('id', body.step_id).maybeSingle();
+  if (!step || step.archived_at) return json(404, { error: 'Step not found' });
+  if (!step.done || !step.completed_on_behalf || step.completed_by !== caller.user_id) {
+    return json(400, { error: 'This step was not completed by you on behalf of the customer' });
+  }
+
+  const [{ data: project }, { data: leads }, { data: label }] = await Promise.all([
+    sb.from('projects').select('id,name').eq('id', step.project_id).single(),
+    sb.from('profiles').select('email,full_name').eq('project_id', step.project_id).eq('role', 'client_lead').eq('active', true),
+    sb.rpc('step_label', { p_step_id: step.id })
+  ]);
+  const to = (leads || []).map(l => l.email);
+  if (!to.length) return json(200, { emailSent: false, noRecipients: true });
+
+  const first = (caller.full_name || '').trim().split(/\s+/)[0] || 'Your FLO team';
+  const when = new Date(step.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const mail = adminNoticeEmail({
+    subject: `FLO completed a step for you: ${step.text}`,
+    intro: `${first} from FLO marked this onboarding step complete on behalf of your team. No action is needed. If something doesn't look right, reply to your CSM.`,
+    rows: [['Project', project.name], ['Step', `${label || ''} ${step.text}`.trim()], ['Completed', `${when} by FLO (${first}) on behalf of your team`]],
+    portalUrl: portalUrl(req)
+  });
+  const r = await sendAll(to, mail);
+
+  await sb.from('activity_log').insert({
+    project_id: step.project_id,
+    actor_id: caller.user_id,
+    actor_role: 'admin',
+    action: 'customer_notified',
+    target: step.text,
+    on_behalf: true,
+    detail: { step_id: step.id, recipients: to.length, sent: r.sent }
+  });
+
   return json(200, { emailSent: r.sent > 0, emailConfigured: r.configured });
 }

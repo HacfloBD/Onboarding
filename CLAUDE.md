@@ -48,6 +48,7 @@ public/                   Netlify publish dir (everything here reaches the brows
   js/admin.js             admin panels: Projects, Project Setup, Users, Phases, Phase Template
   js/phase-editor.js      phase/step editor for the master template and per-project phases, template diff
   js/render.js            phase card markup shared by the Journey and the editor's live preview
+  js/attribution.js       "Completed by / Last updated by / Uploaded by" lines
   js/auth.js              sign-in flows (customer email code, staff password, reset, invite)
   js/data.js              the ONLY module that talks to Supabase data (tables, storage, RPC, realtime, functions)
   js/supabase.js          the one browser Supabase client (anon key only)
@@ -58,7 +59,7 @@ public/                   Netlify publish dir (everything here reaches the brows
   assets/files/           FLO_Onboarding_Forms.xlsx (master spreadsheet download)
   config.js               generated at build, gitignored
 scripts/write-config.mjs
-netlify/functions/        serverless functions (.mjs): admin-create-user, admin-deactivate-user, notify-admins
+netlify/functions/        serverless functions (.mjs): admin-create-user, admin-deactivate-user, notify-admins (also emails a Client Lead when FLO completes a step on their behalf)
 netlify/lib/              shared server code (service-role client + admin guard, mailer, email bodies)
 netlify.toml              build, functions, headers
 package.json              server-side deps for functions only (@supabase/supabase-js, nodemailer)
@@ -99,3 +100,11 @@ docs/                     manual, overview, build prompts
 - Per-project edits go through `save_project_phases` (whole draft, atomic). It never changes `done` or phase status. A removed step that is done or has form data/uploads is archived (`archived_at` on the step, its form_responses and uploads), never deleted. Archived rows are hidden from customers by RLS and ignored by progress, labels and `project_overview`.
 - "Apply latest template" is computed in the browser (`computeApply` in `phase-editor.js`) and saved with the same RPC: completed steps and project-only items are kept.
 - A phase with no live steps never auto-completes; admins set its status in the Phases editor.
+
+## Acting on behalf of a customer (from Prompt 5)
+- Admins can edit every form, upload, add links and toggle every step in any project. The Journey shows an amber banner while an admin views a customer project.
+- `on_behalf` (completed_on_behalf, last_edit_on_behalf, uploads.on_behalf, activity_log.on_behalf) is true only when the actor is an admin AND the step owner is `client` or `both`. FLO-owned steps done by admins are normal work.
+- All stamps (completed_by/at, updated_by, uploaded_by, actor_id, on_behalf) are set by triggers from `auth.uid()` (`0007_on_behalf.sql`). Never trust or send them from the browser; client-supplied values are overwritten.
+- Names in attribution lines come from the `people_directory()` RPC: customers see admins' first names only, and full names of people in their own project.
+- Admin > Activity is the project timeline (filters: on-behalf only, by user, by phase; CSV export with formula-injection protection).
+- Form-save logging is throttled per form per person (10 minutes), so an admin edit is never hidden behind a recent customer edit.

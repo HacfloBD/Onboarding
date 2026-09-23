@@ -3,9 +3,9 @@ import { S, isAdmin, hooks } from './state.js';
 import { initAuth, signOut } from './auth.js';
 import {
   loadProject, listProjectOverview, listProfiles, loadPhasesAndSteps, loadForms, loadUploads,
-  loadSettings, setStepDone, subscribeProject
+  loadSettings, setStepDone, subscribeProject, loadDirectory, callFunction
 } from './data.js';
-import { toast, openModal, registerActions, wireActions, escapeHtml, daysLeft } from './ui.js';
+import { toast, openModal, closeModal, registerActions, wireActions, escapeHtml, daysLeft } from './ui.js';
 import { wireWidgets, fillThumbs, applyDrafts, flushAll } from './widgets.js';
 import { phaseCard, stepLabel } from './render.js';
 import { adminGo, currentSection } from './admin.js';
@@ -47,7 +47,7 @@ async function openProject(project) {
   S.phases = []; S.forms = {}; S.uploads = [];
   lastKey = '';
   if (project) {
-    const d = await fetchProjectData(project.id);
+    const [d] = await Promise.all([fetchProjectData(project.id), isAdmin() ? refreshPeople() : null]);
     if (seq !== loadSeq) return;
     S.phases = d.phases; S.forms = applyDrafts(d.forms); S.uploads = d.uploads;
     lastKey = JSON.stringify(d);
@@ -188,9 +188,18 @@ function renderNav() {
   }
 }
 
+// Admins see whose project they are in, and that their edits count as on behalf of the customer.
+function renderBanner() {
+  const b = $('obb');
+  const show = isAdmin() && !!S.project;
+  b.classList.toggle('hid', !show);
+  if (show) b.innerHTML = `<span aria-hidden="true">👤</span><span>You are viewing <strong>${esc(S.project.name)}</strong> as FLO Admin. Changes you make are recorded as on behalf of the customer.</span>`;
+}
+
 function renderAll() {
   if (!S.user) return;
   renderNav();
+  renderBanner();
   rJ();
   rSt();
   // The project phase editor mirrors S.phases, but never overwrites unsaved edits.
@@ -217,9 +226,23 @@ function showComp(p) {
   openModal(`<div style="text-align:center;padding:16px 0"><div style="font-size:3.5rem;margin-bottom:14px">🎉</div><h2 style="font-size:1.3rem;margin-bottom:10px">Phase ${phaseNo(p)} Complete!</h2><p style="color:var(--g6);font-size:.92rem;max-width:380px;margin:0 auto;line-height:1.6">${esc(p.completion_message || 'Phase complete!')}</p><div class="ma" style="justify-content:center"><button class="btn btn-p btn-lg" data-action="close-modal">Continue →</button></div></div>`);
 }
 
-async function toggleStep(el) {
+// Admin ticking a customer-owned step: confirm, and optionally tell the Client Lead.
+function confirmOnBehalf(f, el) {
+  openModal(`<h2>Mark complete on behalf of the customer?</h2>
+<p style="font-size:.9rem;color:var(--g6);line-height:1.6"><strong>${esc(f.s.text)}</strong> will show as "Completed by FLO on behalf of your team" to ${esc(S.project.name)}.</p>
+<label class="edchk" style="margin-top:12px"><input type="checkbox" id="obMail"> Email the customer's Client Lead a note that FLO completed this step</label>
+<div class="ma"><button class="btn btn-s" data-action="close-modal">Cancel</button><button class="btn btn-p" id="obGo">Mark complete</button></div>`);
+  $('obGo').addEventListener('click', () => {
+    const mail = $('obMail').checked;
+    closeModal();
+    toggleStep(el, { confirmed: true, mail });
+  });
+}
+
+async function toggleStep(el, { confirmed = false, mail = false } = {}) {
   const f = findStep(el.dataset.step);
   if (!f || !canToggle(f.s) || el.classList.contains('busy')) return;
+  if (isAdmin() && !f.s.done && f.s.owner !== 'flo' && !confirmed) { confirmOnBehalf(f, el); return; }
   const wasComplete = f.p.status === 'complete';
   el.classList.add('busy');
   try {
@@ -228,6 +251,11 @@ async function toggleStep(el) {
     el.classList.remove('busy');
     toast('Could not update this step: ' + esc(e.message), 'err');
     return;
+  }
+  if (mail) {
+    callFunction('notify-admins', { kind: 'step_completed_on_behalf', step_id: f.s.id })
+      .then(r => toast(r.emailSent ? "Client Lead notified" : r.emailConfigured === false ? 'Email not configured: no note sent' : 'No active Client Lead to notify', r.emailSent ? 'ok' : 'info'))
+      .catch(e => toast('Could not send the note: ' + esc(e.message), 'err'));
   }
   await reload(true);
   const now = S.phases.find(p => p.id === f.p.id);
@@ -261,17 +289,21 @@ async function selectProject(id, opts = {}) {
 // Sign-in / sign-out
 // ---------------------------------------------------------------------------
 
+// Names for attribution lines and the admin's user lists. Re-read when a
+// project opens so people added during this session show by name.
+async function refreshPeople() {
+  const [people, directory] = await Promise.allSettled([listProfiles(), loadDirectory()]);
+  if (people.status === 'fulfilled') S.people = Object.fromEntries(people.value.map(p => [p.user_id, p])); else console.warn('people', people.reason.message);
+  if (directory.status === 'fulfilled') S.directory = directory.value; else console.warn('directory', directory.reason.message);
+}
+
 async function enter(user, project) {
   S.user = user;
   $('lp').style.display = 'none';
   $('app').classList.add('on');
-  try {
-    const [settings, people] = await Promise.all([loadSettings(), listProfiles()]);
-    S.settings = settings;
-    S.people = Object.fromEntries(people.map(p => [p.user_id, p]));
-  } catch (e) {
-    console.warn('settings/people', e.message);
-  }
+  // Independent loads: one failing must not blank the others.
+  const [settings] = await Promise.allSettled([loadSettings(), refreshPeople()]);
+  if (settings.status === 'fulfilled') S.settings = settings.value; else console.warn('settings', settings.reason.message);
   if (isAdmin()) {
     await refreshProjectList();
     const pref = prefGet();
@@ -288,7 +320,7 @@ async function enter(user, project) {
 function leaveApp() {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
   loadSeq++;
-  Object.assign(S, { user: null, project: null, projects: [], phases: [], forms: {}, uploads: [], people: {}, settings: {}, adminNew: false });
+  Object.assign(S, { user: null, project: null, projects: [], phases: [], forms: {}, uploads: [], people: {}, directory: {}, settings: {}, adminNew: false });
   S.open = new Set(); S.viewOpen = new Set();
   $('lp').style.display = '';
   $('app').classList.remove('on');
@@ -301,6 +333,7 @@ function leaveApp() {
 
 Object.assign(hooks, {
   render: renderAll,
+  refreshPeople,
   reload,
   selectProject,
   goTab,

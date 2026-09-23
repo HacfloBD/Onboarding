@@ -124,6 +124,18 @@ export async function saveProjectPhases(projectId, phases, { note, action, templ
   }));
 }
 
+// Names for "Completed by ..." lines: admins' first names plus people in the
+// caller's project (everyone for admins). user_id -> { name, staff }.
+export async function loadDirectory() {
+  const rows = check(await supabase.rpc('people_directory'));
+  return Object.fromEntries(rows.map(r => [r.user_id, { name: r.display_name, staff: r.is_staff }]));
+}
+
+export async function loadActivity(projectId, limit = 2000) {
+  return check(await supabase.from('activity_log').select('*').eq('project_id', projectId)
+    .order('created_at', { ascending: false }).limit(limit));
+}
+
 export async function loadSettings() {
   const rows = check(await supabase.from('app_settings').select('key,value'));
   return Object.fromEntries(rows.map(r => [r.key, r.value]));

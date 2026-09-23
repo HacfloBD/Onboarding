@@ -291,6 +291,49 @@ begin
   get diagnostics n = row_count;
   insert into rls_results (check_name, result) values
     ('A cannot delete B uploads', case when n = 0 then 'PASS' else 'FAIL' end);
+
+  -- Spoofing: whatever the request sends, stamps come from auth.uid().
+  update public.project_steps
+    set done = true, completed_by = '00000000-0000-4000-8000-00000000000b', completed_on_behalf = true
+    where id = '00000000-0000-4000-b000-0000000000a1';
+  select count(*) into n from public.project_steps
+    where id = '00000000-0000-4000-b000-0000000000a1'
+      and completed_by = '00000000-0000-4000-8000-00000000000a' and not completed_on_behalf;
+  insert into rls_results (check_name, result) values
+    ('Client cannot spoof completed_by or on_behalf', case when n = 1 then 'PASS' else 'FAIL' end);
+
+  insert into public.form_responses (project_id, project_step_id, form_type, data, updated_by, last_edit_on_behalf)
+  values (a_project, '00000000-0000-4000-b000-0000000000a1', 'form_org_details', '{"orgName":"A"}',
+          '00000000-0000-4000-8000-00000000000b', true);
+  select count(*) into n from public.form_responses
+    where project_step_id = '00000000-0000-4000-b000-0000000000a1'
+      and updated_by = '00000000-0000-4000-8000-00000000000a' and not last_edit_on_behalf;
+  insert into rls_results (check_name, result) values
+    ('Client cannot spoof form updated_by or on_behalf', case when n = 1 then 'PASS' else 'FAIL' end);
+
+  insert into public.uploads (project_id, project_step_id, kind, link_url, uploaded_by, on_behalf)
+  values (a_project, '00000000-0000-4000-b000-0000000000a1', 'link', 'https://example.com/spoof',
+          '00000000-0000-4000-8000-00000000000b', true);
+  select count(*) into n from public.uploads
+    where link_url = 'https://example.com/spoof'
+      and uploaded_by = '00000000-0000-4000-8000-00000000000a' and not on_behalf;
+  insert into rls_results (check_name, result) values
+    ('Client cannot spoof uploaded_by or on_behalf', case when n = 1 then 'PASS' else 'FAIL' end);
+
+  insert into public.activity_log (project_id, action, actor_id, actor_role, on_behalf)
+  values (a_project, 'spoof', '00000000-0000-4000-8000-0000000000ad', 'admin', true);
+  select count(*) into n from public.activity_log
+    where action = 'spoof' and actor_id = '00000000-0000-4000-8000-00000000000a'
+      and actor_role = 'client_lead' and not on_behalf;
+  insert into rls_results (check_name, result) values
+    ('Client cannot spoof activity actor or on_behalf', case when n = 1 then 'PASS' else 'FAIL' end);
+
+  select count(*) into n from public.people_directory() where display_name = 'Test';
+  insert into rls_results (check_name, result) values
+    ('Client sees admin first names only', case when n = 1 and not exists (select 1 from public.people_directory() where display_name like '%Admin%') then 'PASS' else 'FAIL' end);
+  select count(*) into n from public.people_directory() where user_id = '00000000-0000-4000-8000-00000000000b';
+  insert into rls_results (check_name, result) values
+    ('Client cannot look up other projects'' people', case when n = 0 then 'PASS' else 'FAIL' end);
 end;
 $$;
 
@@ -329,6 +372,31 @@ begin
     where id = '00000000-0000-4000-a000-00000000000a' and status = 'complete';
   insert into rls_results (check_name, result) values
     ('Phase completes when all its steps are done', case when n = 1 then 'PASS' else 'FAIL' end);
+
+  select count(*) into n from public.project_steps
+    where id = '00000000-0000-4000-b000-0000000000a2' and done and not completed_on_behalf
+      and completed_by = '00000000-0000-4000-8000-0000000000ad';
+  insert into rls_results (check_name, result) values
+    ('Admin completing a FLO step is not on behalf', case when n = 1 then 'PASS' else 'FAIL' end);
+
+  update public.form_responses set data = '{"orgName":"Filled by FLO"}'
+    where project_step_id = '00000000-0000-4000-b000-0000000000a1';
+  select count(*) into n from public.form_responses
+    where project_step_id = '00000000-0000-4000-b000-0000000000a1' and last_edit_on_behalf
+      and updated_by = '00000000-0000-4000-8000-0000000000ad';
+  insert into rls_results (check_name, result) values
+    ('Admin form edit on a client step is on behalf', case when n = 1 then 'PASS' else 'FAIL' end);
+
+  insert into public.uploads (project_id, project_step_id, kind, link_url)
+  values ('00000000-0000-4000-9000-00000000000a', '00000000-0000-4000-b000-0000000000a1', 'link', 'https://example.com/by-flo');
+  select count(*) into n from public.uploads where link_url = 'https://example.com/by-flo' and on_behalf;
+  insert into rls_results (check_name, result) values
+    ('Admin upload on a client step is on behalf', case when n = 1 then 'PASS' else 'FAIL' end);
+
+  select count(*) into n from public.activity_log
+    where project_id = '00000000-0000-4000-9000-00000000000a' and action = 'form_saved' and on_behalf;
+  insert into rls_results (check_name, result) values
+    ('On-behalf form save is logged as on behalf', case when n >= 1 then 'PASS' else 'FAIL' end);
 
   -- Template copy
   declare

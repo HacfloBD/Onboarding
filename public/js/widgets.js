@@ -3,6 +3,7 @@
 import { S, isAdmin, hooks } from './state.js';
 import { saveForm, uploadFile, addLink, deleteUpload, signedUrl, signedUrls, resourceUrl, callFunction } from './data.js';
 import { toast, openModal, closeModal, registerActions, escapeHtml, fmtSize, fmtDate, safeUrl } from './ui.js';
+import { formLine, uploaderPhrase } from './attribution.js';
 
 const esc = escapeHtml;
 const MB = 1048576;
@@ -55,7 +56,9 @@ function radios(d, f, label, options, ro) {
 const grid2 = inner => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${inner}</div>`;
 
 function frm(step, inner, ro) {
-  return `<div class="ifrm" data-step="${step.id}" data-type="${step.type}"${ro ? ' data-ro="1"' : ''}>${ro ? '' : `<div class="svd" data-svd="${step.id}"></div>`}${inner}</div>`;
+  const row = S.forms[step.id];
+  const line = formLine(row);
+  return `<div class="ifrm" data-step="${step.id}" data-type="${step.type}"${ro ? ' data-ro="1"' : ''}>${ro ? '' : `<div class="svd" data-svd="${step.id}"></div>`}${inner}${line ? `<div class="attr${row.last_edit_on_behalf ? ' ob' : ''}" data-attr="${step.id}">${escapeHtml(line)}</div>` : ''}</div>`;
 }
 
 const formData = step => (S.forms[step.id] && S.forms[step.id].data) || {};
@@ -70,11 +73,6 @@ function masterTemplateUrl() {
   return p ? resourceUrl(p) : FALLBACK_TEMPLATE;
 }
 
-function whoName(u) {
-  const p = S.people[u.uploaded_by];
-  if (p && p.role !== 'admin') return p.full_name || p.email;
-  return 'FLO team';
-}
 
 function canDelete(u, step) {
   if (isAdmin()) return true;
@@ -87,7 +85,7 @@ function uploadList(step, { thumbs = false } = {}) {
   return `<div class="upl">${ups.map(u => {
     const link = u.kind === 'link' ? safeUrl(u.link_url) : '';
     const name = u.kind === 'link' ? (u.link_url || 'Link') : (u.file_name || 'File');
-    const meta = [u.kind === 'file' ? fmtSize(u.size_bytes) : 'Shared link', whoName(u), fmtDate(u.created_at)].filter(Boolean).join(' · ');
+    const meta = [u.kind === 'file' ? fmtSize(u.size_bytes) : 'Shared link', 'Uploaded by ' + uploaderPhrase(u), fmtDate(u.created_at)].filter(Boolean).join(' · ');
     const open = u.kind === 'link'
       ? (link ? `<a class="btn btn-g btn-sm" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Open</a>` : '')
       : `<button class="btn btn-g btn-sm" data-action="download" data-upload="${u.id}">Download</button>`;
@@ -284,6 +282,7 @@ async function flush(id, type) {
     if (drafts[id] === payload) delete drafts[id];
     S.forms[id] = { ...row, data: drafts[id] || row.data };
     setSaved(id, 'Saved ✓');
+    document.querySelectorAll(`[data-attr="${id}"]`).forEach(e => { e.textContent = formLine(row); e.classList.toggle('ob', !!row.last_edit_on_behalf); });
     if (type === 'form_schedule_session' && !isAdmin()) {
       const slot = slotOf(payload);
       if (slot && slot !== lastSlot[id]) {

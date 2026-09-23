@@ -2,11 +2,11 @@
 import { S, hooks } from './state.js';
 import {
   listProjectOverview, createProject, updateProject, setProjectStatus, listProfiles,
-  resetProjectProgress, logActivity, callFunction
+  resetProjectProgress, logActivity, callFunction, loadActivity
 } from './data.js';
 import { portalUrl } from './supabase.js';
 import { openTemplateEditor, openProjectEditor, wireEditor, guardUnsaved, closeEditor } from './phase-editor.js';
-import { toast, openModal, closeModal, registerActions, escapeHtml, daysLeft, slug } from './ui.js';
+import { toast, openModal, closeModal, registerActions, escapeHtml, daysLeft, slug, fmtDate } from './ui.js';
 
 const esc = escapeHtml;
 const $ = id => document.getElementById(id);
@@ -39,6 +39,7 @@ export async function adminGo(s = section) {
     else if (s === 'setup') renderSetup(c);
     else if (s === 'users') await renderUsers(c, stale);
     else if (s === 'template') await openTemplateEditor(c);
+    else if (s === 'activity') await renderActivity(c, stale);
     else if (s === 'phases') {
       if (S.project) await openProjectEditor(c);
       else c.innerHTML = '<div class="ash"><h2>Phases</h2></div><p style="font-size:.86rem;color:var(--g4)">Select a project first. To change the phases every new project starts with, use Phase Template.</p>';
@@ -240,6 +241,103 @@ function activeModal(u, on) {
 }
 
 // ---------------------------------------------------------------------------
+// Activity timeline (selected project)
+// ---------------------------------------------------------------------------
+
+const ACTIONS = {
+  step_done: 'Completed a step', step_undone: 'Reopened a step', form_saved: 'Saved a form',
+  upload_added: 'Added an upload', upload_deleted: 'Removed an upload', phase_status: 'Changed phase status',
+  project_created: 'Created the project', project_reset: 'Reset project progress', project_archived: 'Archived the project',
+  project_restored: 'Restored the project', phases_edited: 'Edited phases', template_applied: 'Applied the template',
+  user_created: 'Added a user', user_deactivated: 'Deactivated a user', user_reactivated: 'Reactivated a user',
+  session_request_emailed: 'Session request emailed to FLO', customer_notified: 'Emailed the Client Lead'
+};
+let actRows = [];
+const actF = { kind: 'all', user: '', phase: '' };
+
+function actPhase(r) {
+  const d = r.detail || {};
+  if (d.phase_id) return d.phase_id;
+  if (d.step_id) {
+    const p = S.phases.find(ph => ph.steps.some(x => x.id === d.step_id));
+    return p ? p.id : 'other';
+  }
+  return 'project';
+}
+function actWho(r) {
+  if (!r.actor_id) return 'System';
+  const p = S.people[r.actor_id];
+  const name = p ? (p.full_name || p.email) : (S.directory[r.actor_id] || {}).name || 'Former user';
+  return (r.actor_role === 'admin' ? 'FLO: ' : '') + name;
+}
+function actFiltered() {
+  return actRows.filter(r =>
+    (actF.kind === 'all' || r.on_behalf) &&
+    (!actF.user || r.actor_id === actF.user) &&
+    (!actF.phase || actPhase(r) === actF.phase));
+}
+function actTable() {
+  const rows = actFiltered();
+  if (!rows.length) return '<p style="font-size:.86rem;color:var(--g4);padding:14px 0">No activity matches these filters.</p>';
+  return `<table class="at"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th><th></th></tr></thead><tbody>${rows.map(r => `<tr>
+<td style="font-size:.78rem;white-space:nowrap">${esc(fmtDate(r.created_at))}</td>
+<td style="font-size:.82rem">${esc(actWho(r))}</td>
+<td style="font-size:.82rem">${esc(ACTIONS[r.action] || r.action)}</td>
+<td style="font-size:.8rem;color:var(--g6)">${esc(r.target || '')}${r.action === 'phase_status' && r.detail ? esc(` (${r.detail.from} to ${r.detail.to})`) : ''}</td>
+<td>${r.on_behalf ? '<span class="pill-ob">On behalf</span>' : ''}</td></tr>`).join('')}</tbody></table>`;
+}
+function phaseLabel(id) {
+  const i = S.phases.findIndex(p => p.id === id);
+  return i >= 0 ? `Phase ${i + 1}: ${S.phases[i].name}` : id === 'project' ? 'Project-level' : 'Removed steps';
+}
+
+async function renderActivity(c, stale) {
+  if (!S.project) { c.innerHTML = '<div class="ash"><h2>Activity</h2></div><p style="font-size:.86rem;color:var(--g4)">Select a project first.</p>'; return; }
+  c.innerHTML = loading;
+  const [rows] = await Promise.all([loadActivity(S.project.id), hooks.refreshPeople()]);
+  if (stale()) return;
+  actRows = rows;
+  const users = [...new Set(rows.map(r => r.actor_id).filter(Boolean))];
+  const phases = [...S.phases.map(p => p.id), 'project', 'other'];
+  c.innerHTML = `<div class="ash"><h2>Activity: ${esc(S.project.name)}</h2><div style="display:flex;gap:8px"><button class="btn btn-sm btn-s" data-action="act-refresh">Refresh</button><button class="btn btn-sm btn-p" data-action="act-csv">Export CSV</button></div></div>
+<div class="acf">
+<div class="fg"><label>Show</label><select id="acK"><option value="all">All activity</option><option value="ob" ${actF.kind === 'ob' ? 'selected' : ''}>On behalf of the customer only</option></select></div>
+<div class="fg"><label>By</label><select id="acU"><option value="">Anyone</option>${users.map(u => `<option value="${u}" ${actF.user === u ? 'selected' : ''}>${esc(actWho({ actor_id: u, actor_role: (rows.find(r => r.actor_id === u) || {}).actor_role }))}</option>`).join('')}</select></div>
+<div class="fg"><label>Phase</label><select id="acP"><option value="">All phases</option>${phases.map(p => `<option value="${p}" ${actF.phase === p ? 'selected' : ''}>${esc(phaseLabel(p))}</option>`).join('')}</select></div>
+<span id="acN" style="font-size:.8rem;color:var(--g5);padding-bottom:8px"></span>
+</div>
+<div id="acT" style="overflow-x:auto"></div>`;
+  const draw = () => { $('acT').innerHTML = actTable(); $('acN').textContent = `${actFiltered().length} of ${actRows.length} entries`; };
+  $('acK').addEventListener('change', e => { actF.kind = e.target.value; draw(); });
+  $('acU').addEventListener('change', e => { actF.user = e.target.value; draw(); });
+  $('acP').addEventListener('change', e => { actF.phase = e.target.value; draw(); });
+  draw();
+}
+
+function csvCell(v) {
+  const t = v === null || v === undefined ? '' : String(v);
+  // Neutralize spreadsheet formulas, then quote.
+  const safe = /^[=+\-@\t\r]/.test(t) ? "'" + t : t;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
+function exportCsv() {
+  const rows = actFiltered();
+  const head = ['When (UTC)', 'Who', 'Role', 'Action', 'Details', 'On behalf', 'Phase', 'Raw detail'];
+  const lines = [head.map(csvCell).join(',')].concat(rows.map(r => [
+    r.created_at, actWho(r), r.actor_role || '', ACTIONS[r.action] || r.action, r.target || '',
+    r.on_behalf ? 'yes' : 'no', phaseLabel(actPhase(r)), JSON.stringify(r.detail || {})
+  ].map(csvCell).join(',')));
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `activity-${S.project.code}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+// ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
@@ -297,6 +395,8 @@ registerActions({
     }
     adminGo('projects');
   },
+  'act-refresh': () => adminGo('activity'),
+  'act-csv': () => exportCsv(),
   'add-user': () => addUserModal(),
   'confirm-add-user': async el => {
     const n = $('nuN').value.trim(), em = $('nuE').value.trim().toLowerCase(), role = $('nuR').value;

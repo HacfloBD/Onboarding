@@ -8,6 +8,7 @@ export const S = {
   forms: {},           // project_step_id -> form_responses row
   uploads: [],         // uploads rows for the open project
   people: {},          // user_id -> profile (whoever RLS lets us see)
+  directory: {},       // user_id -> { name, staff } for attribution lines
   settings: {},        // app_settings key -> value
   open: new Set(),     // phase ids expanded in the accordion
   viewOpen: new Set(), // step ids with "View submitted info" expanded
@@ -19,6 +20,7 @@ export const isAdmin = () => S.user && S.user.role === 'admin';
 // Late-bound callbacks so modules can trigger each other without import cycles.
 export const hooks = {
   render() {},
+  refreshPeople() {},
   reload() {},
   selectProject() {},
   goTab() {},
