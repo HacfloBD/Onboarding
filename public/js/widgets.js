@@ -3,7 +3,7 @@
 import { S, isAdmin, hooks } from './state.js';
 import { saveForm, uploadFile, addLink, deleteUpload, signedUrl, signedUrls, callFunction } from './data.js';
 import { settingText, resourceDownloadUrl } from './resources.js';
-import { toast, openModal, closeModal, registerActions, escapeHtml, fmtSize, fmtDate, safeUrl } from './ui.js';
+import { toast, openModal, closeModal, registerActions, escapeHtml, fmtSize, fmtDate, safeUrl, reportError } from './ui.js';
 import { formLine, uploaderPhrase } from './attribution.js';
 
 const esc = escapeHtml;
@@ -92,7 +92,7 @@ function uploadList(step, { thumbs = false } = {}) {
 }
 
 function dropZone(step, { accept = '', multiple = true, kind = 'files', note = 'Any file type' } = {}) {
-  return `<div class="uz"><input type="file" ${multiple ? 'multiple' : ''} ${accept ? `accept="${esc(accept)}"` : ''} data-change="upload" data-upload="${step.id}" data-kind="${kind}"><div class="uzt">📎 <strong>Click to upload</strong> or drop files here<br><span style="font-size:.76rem;color:var(--g4)">${note}</span></div></div>`;
+  return `<div class="uz"><input type="file" aria-label="${kind === 'logo' ? 'Upload your logo' : 'Upload files'}" ${multiple ? 'multiple' : ''} ${accept ? `accept="${esc(accept)}"` : ''} data-change="upload" data-upload="${step.id}" data-kind="${kind}"><div class="uzt">📎 <strong>Click to upload</strong> or drop files here<br><span style="font-size:.76rem;color:var(--g4)">${note}</span></div></div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ ${opts.map(o => `<strong>${esc(o.label)}:</strong> ${esc(o.help)}`).join('<br>')
 
   upload_files(step, ro) {
     const cfg = step.config || {};
-    const max = cfg.max_files || 10;
+    const max = Math.max(1, Math.floor(Number(cfg.max_files))) || 10;
     const accept = cfg.accept && cfg.accept !== '*' ? cfg.accept : '';
     if (ro) return uploadList(step);
     const optB = cfg.show_master_template_download === false ? '' : `
@@ -213,6 +213,7 @@ export async function fillThumbs(root) {
 // ---------------------------------------------------------------------------
 
 const drafts = {};    // step id -> latest unsaved data
+let draftOwner = null; // { userId, projectId } the drafts belong to
 const timers = {};
 const lastSlot = {};  // step id -> last session slot we notified admins about
 
@@ -253,10 +254,12 @@ const slotOf = d => d.preferredDate && d.preferredTime && d.mode
   : '';
 
 function onFieldEdit(frmEl) {
-  if (frmEl.dataset.ro) return;
+  // A field can fire "change" as it loses focus after sign-out; ignore it.
+  if (frmEl.dataset.ro || !S.user || !S.project) return;
   const id = frmEl.dataset.step, type = frmEl.dataset.type;
   if (type === 'form_schedule_session' && !(id in lastSlot)) lastSlot[id] = slotOf(formData({ id }));
   const data = collect(frmEl);
+  draftOwner = { userId: S.user.id, projectId: S.project.id };
   drafts[id] = data;
   S.forms[id] = { ...(S.forms[id] || { project_step_id: id }), data };
   frmEl.querySelectorAll('[data-show-if]').forEach(el => {
@@ -272,7 +275,7 @@ async function flush(id, type) {
   clearTimeout(timers[id]);
   delete timers[id];
   const payload = drafts[id];
-  if (!payload || !S.project) return;
+  if (!payload || !S.project || !S.user) return;
   try {
     const row = await saveForm(S.project.id, id, type, payload);
     if (drafts[id] === payload) delete drafts[id];
@@ -288,8 +291,32 @@ async function flush(id, type) {
     }
   } catch (e) {
     setSaved(id, 'Not saved');
-    toast('Could not save: ' + esc(e.message), 'err');
+    reportError(e, 'Could not save');
   }
+}
+
+// After signing in again (e.g. the session expired mid-edit), save what the
+// same person typed on this project. Drafts from anyone else are dropped.
+export async function resumeDrafts() {
+  const ids = Object.keys(drafts);
+  if (!ids.length) return 0;
+  if (!draftOwner || !S.user || draftOwner.userId !== S.user.id) { clearDrafts(); return 0; }
+  if (!S.project || draftOwner.projectId !== S.project.id) return 0;
+  let n = 0;
+  for (const id of ids) {
+    const step = findStep(id);
+    if (!step) continue;
+    await flush(id, step.type);
+    if (!drafts[id]) n += 1;
+  }
+  return n;
+}
+
+export function clearDrafts() {
+  for (const id of Object.keys(timers)) clearTimeout(timers[id]);
+  for (const k of Object.keys(timers)) delete timers[k];
+  for (const k of Object.keys(drafts)) delete drafts[k];
+  draftOwner = null;
 }
 
 export async function flushAll() {
@@ -311,7 +338,7 @@ async function handleUpload(inp) {
   if (!step || !files.length || !S.project) return;
 
   const logo = kind === 'logo';
-  const max = logo ? 1 : ((step.config && step.config.max_files) || 10);
+  const max = logo ? 1 : (Math.max(1, Math.floor(Number(step.config && step.config.max_files))) || 10);
   const limit = logo ? 5 * MB : 50 * MB;
   const existing = S.uploads.filter(u => u.project_step_id === id && u.kind === 'file').length;
 
@@ -338,7 +365,7 @@ async function handleUpload(inp) {
       S.uploads.push(row);
       added.push(row);
     } catch (e) {
-      toast(`Could not upload ${esc(files[i].name)}: ${esc(e.message)}`, 'err');
+      reportError(e, `Could not upload ${esc(files[i].name)}`);
     }
   }
   if (prog) prog.textContent = '';
@@ -371,7 +398,7 @@ registerActions({
       notifyUpload([row]);
       hooks.render();
     } catch (e) {
-      toast('Could not save the link: ' + esc(e.message), 'err');
+      reportError(e, 'Could not save the link');
     } finally {
       el.classList.remove('busy');
     }
@@ -383,7 +410,7 @@ registerActions({
     try {
       location.href = await signedUrl(u.storage_path, u.file_name || true);
     } catch (e) {
-      toast('Could not create a download link: ' + esc(e.message), 'err');
+      reportError(e, 'Could not create a download link');
     }
   },
 
@@ -405,7 +432,7 @@ registerActions({
       toast('Removed', 'info');
       hooks.render();
     } catch (e) {
-      toast(esc(e.message), 'err');
+      reportError(e);
     }
   },
 

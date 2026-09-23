@@ -47,6 +47,12 @@ Netlify is connected to this repo:
 
 Build settings come from `netlify.toml`, so nothing needs to be set in the Netlify UI except environment variables (Site configuration > Environment variables). Only `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `PORTAL_URL` reach the browser. Server-only secrets (Supabase service_role, Resend) are read inside Netlify Functions and must never be added to `write-config.mjs`.
 
+## Keep-alive (stopgap)
+
+Supabase's free tier pauses a project after about 7 days without activity, which would leave a customer facing a dead portal between cohorts. `netlify/functions/keep-alive.mjs` is a Netlify Scheduled Function that runs once a day (`@daily`, UTC) and does one trivial read with the service role. You can see its runs in Netlify under **Logs > Functions > keep-alive**.
+
+This is a stopgap. **Upgrade Supabase to Pro before the first real customer signs in**: Pro projects never pause and include daily backups. Once on Pro you can delete `keep-alive.mjs`.
+
 ## Database (Supabase)
 
 - First-time setup: paste `supabase/setup.sql` into the Supabase SQL editor and run it. It creates the tables, row-level security, storage buckets and the 5-phase template. It is safe to re-run.
@@ -56,6 +62,13 @@ Build settings come from `netlify.toml`, so nothing needs to be set in the Netli
   ```
   (keep the header comment at the top of `setup.sql`).
 - Security check: run `supabase/tests/rls_checks.sql` in the SQL editor. Every row should say PASS.
+- Isolation check through the real API (two throwaway customers, real sign-ins, cleans up after itself):
+  ```bash
+  npm install
+  SUPABASE_URL=https://<ref>.supabase.co SUPABASE_ANON_KEY=<anon> SUPABASE_SERVICE_ROLE_KEY=<service_role> \
+    FUNCTIONS_URL=https://<site>/.netlify/functions node supabase/tests/rest_isolation.mjs
+  ```
+  It prints a PASS/FAIL table and exits non-zero on any failure. Paste the keys into your terminal only for this command.
 - Email templates for Supabase Auth live in `supabase/email-templates/`.
 
 ## Sign-in
@@ -101,7 +114,7 @@ public/                  what Netlify serves
   assets/files/          FLO_Onboarding_Forms.xlsx
   config.js              generated at build (gitignored)
 scripts/write-config.mjs writes public/config.js from env vars
-netlify/functions/       Netlify Functions (.mjs): admin-create-user, admin-deactivate-user, notify-admins
+netlify/functions/       Netlify Functions (.mjs): admin-create-user, admin-deactivate-user, notify-admins, keep-alive (daily)
 netlify/lib/             shared function code (admin guard, mailer, email bodies)
 netlify.toml             build, functions and security headers
 legacy/                  original single-file app (reference only)

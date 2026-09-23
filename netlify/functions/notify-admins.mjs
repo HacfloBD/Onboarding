@@ -4,12 +4,37 @@
 // POST { kind: 'step_completed_on_behalf', step_id }
 //   Admins only. Emails the project's active Client Lead(s) that FLO completed a
 //   step on their behalf. Sent from MAIL_FROM like every app email.
+// Every kind shares one limit: 20 emails per project per hour (HTTP 429 beyond).
 import { json, readJson, portalUrl } from '../lib/http.mjs';
 import { requireUser } from '../lib/supabase-admin.mjs';
 import { sendMail } from '../lib/mailer.mjs';
 import { adminNoticeEmail } from '../lib/emails.mjs';
 
 const MODES = { in_person: 'In-person (HAC Texas comes to you)', virtual: 'Virtual (Teams or Zoom)' };
+
+// Rate limit: at most 20 notification emails per project per hour, counted
+// from the activity_log rows this function writes for every send.
+const HOURLY_LIMIT = 20;
+const EMAIL_ACTIONS = ['session_request_emailed', 'upload_emailed', 'customer_notified'];
+
+async function emailsLastHour(sb, projectId) {
+  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { data, error } = await sb.from('activity_log').select('detail')
+    .eq('project_id', projectId).in('action', EMAIL_ACTIONS).gte('created_at', since);
+  if (error) throw error;
+  return (data || []).reduce((n, r) => n + (Number(r.detail && r.detail.sent) || 0), 0);
+}
+
+async function overLimit(sb, projectId, count) {
+  try {
+    return (await emailsLastHour(sb, projectId)) + count > HOURLY_LIMIT;
+  } catch (e) {
+    console.error('rate limit check failed', e.message);
+    return true; // fail closed: never risk an email flood
+  }
+}
+
+const limited = () => json(429, { error: `Email limit reached for this project (${HOURLY_LIMIT} per hour). Try again later.`, rateLimited: true });
 const UUID = /^[0-9a-f-]{36}$/i;
 
 export default async req => {
@@ -69,6 +94,7 @@ async function sessionRequest(req, sb, caller, body) {
   if (prior && prior.length) return json(200, { emailSent: false, duplicate: true });
 
   const to = await recipients(sb, project);
+  if (await overLimit(sb, step.project_id, to.length)) return limited();
   const mail = adminNoticeEmail({
     subject: `Session request: ${project.name}`,
     intro: `${caller.full_name || caller.email} asked to schedule the 6-Pillar assessment session.`,
@@ -112,6 +138,7 @@ async function uploadNotice(req, sb, caller, body) {
   const projectId = rows[0].project_id;
   const { data: project } = await sb.from('projects').select('id,name,csm_name').eq('id', projectId).single();
   const to = await recipients(sb, project);
+  if (await overLimit(sb, projectId, to.length)) return limited();
   const items = rows.filter(u => u.project_id === projectId).map(u =>
     u.kind === 'link' ? ['Link', u.link_url] : ['File', `${u.file_name} (${Math.max(1, Math.round((u.size_bytes || 0) / 1024))} KB)`]);
 
@@ -122,6 +149,14 @@ async function uploadNotice(req, sb, caller, body) {
     portalUrl: portalUrl(req)
   });
   const r = await sendAll(to, mail);
+  await sb.from('activity_log').insert({
+    project_id: projectId,
+    actor_id: caller.user_id,
+    actor_role: caller.role,
+    action: 'upload_emailed',
+    target: `${items.length} item${items.length > 1 ? 's' : ''}`,
+    detail: { upload_ids: rows.map(u => u.id), recipients: to.length, sent: r.sent }
+  });
   return json(200, { emailSent: r.sent > 0, emailConfigured: r.configured });
 }
 
@@ -144,6 +179,7 @@ async function completedOnBehalf(req, sb, caller, body) {
   ]);
   const to = (leads || []).map(l => l.email);
   if (!to.length) return json(200, { emailSent: false, noRecipients: true });
+  if (await overLimit(sb, step.project_id, to.length)) return limited();
 
   const first = (caller.full_name || '').trim().split(/\s+/)[0] || 'Your FLO team';
   const when = new Date(step.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });

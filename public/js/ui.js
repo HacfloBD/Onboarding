@@ -67,6 +67,17 @@ export function wireActions() {
   });
   $('mW').addEventListener('click', e => { if (e.target === $('mW')) closeModal(); });
   document.addEventListener('keydown', trapKeys);
+  // Keyboard: Enter or Space on a role="button" element runs its action.
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target.closest && e.target.closest('[data-action][role="button"]');
+    if (!el || el !== e.target) return;
+    const fn = registry[el.dataset.action];
+    if (fn) { e.preventDefault(); fn(el, e); }
+  });
+  linkLabels(document.body);
+  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) linkLabels(n); })))
+    .observe(document.body, { childList: true, subtree: true });
   // Keys pressed inside a cross-origin iframe (the YouTube player) never reach
   // this page, so also pull focus back if it ever lands outside the dialog.
   document.addEventListener('focusin', e => {
@@ -75,6 +86,28 @@ export function wireActions() {
     (first || $('mC')).focus();
   });
   registerActions({ 'close-modal': () => closeModal() });
+}
+
+// Every .fg has a <label> followed by its field. Link them (for/id) so screen
+// readers announce the label; radio groups get role="radiogroup" instead.
+let labelSeq = 0;
+function linkLabels(root) {
+  const groups = root.matches && root.matches('.fg') ? [root] : [...root.querySelectorAll('.fg')];
+  for (const g of groups) {
+    const label = g.querySelector(':scope > label');
+    if (!label || label.htmlFor) continue;
+    const rg = g.querySelector(':scope > .rg');
+    if (rg) {
+      label.id = label.id || `lbl-${++labelSeq}`;
+      rg.setAttribute('role', 'radiogroup');
+      rg.setAttribute('aria-labelledby', label.id);
+      continue;
+    }
+    const field = g.querySelector(':scope > input, :scope > select, :scope > textarea, :scope > .uz input, :scope input:not([type=radio]), :scope select, :scope textarea');
+    if (!field) continue;
+    if (!field.id) field.id = `fld-${++labelSeq}`;
+    label.htmlFor = field.id;
+  }
 }
 
 export function fmtSize(b) {
@@ -109,3 +142,30 @@ export function safeUrl(u) {
 export const slug = v => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
 export { escapeHtml };
+
+// ---------------------------------------------------------------------------
+// Errors: plain words for network and session problems.
+// ---------------------------------------------------------------------------
+
+export const NETWORK_MSG = "We couldn't reach the server. Check your connection and try again.";
+export const EXPIRED_MSG = 'Your session expired, please sign in again';
+
+export function errorKind(e) {
+  if (!e) return 'other';
+  const msg = String(e.message || e);
+  if (e.name === 'AuthRetryableFetchError' || e.status === 0 || /Failed to fetch|NetworkError|Load failed|fetch failed|network/i.test(msg)) return 'network';
+  if (e.status === 401 || e.code === 'PGRST301' || e.code === 'PGRST303' || e.name === 'AuthSessionMissingError' ||
+      /JWT expired|invalid JWT|JWSError|Session expired|refresh token/i.test(msg)) return 'session';
+  return 'other';
+}
+
+let onExpired = () => {};
+export function setSessionExpiredHandler(fn) { onExpired = fn; }
+
+// Show an error. prefix is trusted text (already escaped by the caller).
+export function reportError(e, prefix = '') {
+  const kind = errorKind(e);
+  if (kind === 'session') { onExpired(); return; }
+  if (kind === 'network') { toast(NETWORK_MSG, 'err'); return; }
+  toast((prefix ? prefix + ': ' : '') + escapeHtml(e && e.message ? e.message : e), 'err');
+}

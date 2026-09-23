@@ -60,18 +60,19 @@ public/                   Netlify publish dir (everything here reaches the brows
   assets/files/           FLO_Onboarding_Forms.xlsx (master spreadsheet download)
   config.js               generated at build, gitignored
 scripts/write-config.mjs
-netlify/functions/        serverless functions (.mjs): admin-create-user, admin-deactivate-user, notify-admins (also emails a Client Lead when FLO completes a step on their behalf)
+netlify/functions/        serverless functions (.mjs): admin-create-user, admin-deactivate-user, notify-admins (also emails a Client Lead when FLO completes a step on their behalf), keep-alive (daily schedule)
 netlify/lib/              shared server code (service-role client + admin guard, mailer, email bodies)
 netlify.toml              build, functions, headers
 package.json              server-side deps for functions only (@supabase/supabase-js, nodemailer)
 supabase/migrations/      SQL migrations, run in order
 supabase/setup.sql        all migrations combined (regenerate after editing a migration)
-supabase/tests/           rls_checks.sql
+supabase/tests/           rls_checks.sql (SQL editor), rest_isolation.mjs (REST isolation with client JWTs)
 supabase/email-templates/ Supabase Auth email templates (OTP, reset password)
 supabase/seed/            phase-template.json (source for 0004_seed.sql)
 legacy/                   original single-file app, reference only, do not edit
 brand/                    original brand files
-docs/                     manual, overview, build prompts
+docs/                     manual, overview, build prompts, RUNBOOK, QA_CHECKLIST, MANUAL_UPDATES
+tests/local/              local test harness and e2e suites (not deployed)
 ```
 
 ## Auth and data model (from Prompt 2)
@@ -114,3 +115,13 @@ docs/                     manual, overview, build prompts
 - `app_settings` keys: `overview_video_url` and `ccc_assessment_url` (text), `manual_file_path` and `master_template_path` (object `{ path, file_name, size_bytes, uploaded_at }` in the public `resources` bucket). Read them with `settingText()` / `resourceFile()` from `resources.js`, never by hand.
 - Admin > Resources is the only writer. Each file upload gets a new unique path (so CDN caches can't serve the old file); the old object is deleted after the setting is saved. Changes are logged by a trigger (`resource_updated`, project_id null) and pushed to every signed-in browser through Realtime.
 - The video embed always uses `https://www.youtube-nocookie.com/embed/{id}?rel=0&modestbranding=1` (allowed by `frame-src` in the CSP). The shared modal (`ui.js`) traps focus, closes on Escape and empties itself on close, which stops playback. Keys pressed inside the cross-origin player never reach the page, so the modal always shows a Close button.
+
+## Hardening (from Prompt 7)
+- Errors: call `reportError(e, 'Could not X')` from `ui.js` instead of building an error toast. It shows `NETWORK_MSG` for network failures, sends session failures (401, PGRST301/303, refresh-token errors) to the sign-in page with "Your session expired, please sign in again", and escapes everything else. `errorKind(e)` returns `'network' | 'session' | 'other'`. `callFunction` errors carry `err.status`.
+- Session expiry: `auth.js` tells an expiry apart from a user sign-out. Unsaved form input stays in memory (`widgets.js` drafts, tagged with user and project) and is saved by `resumeDrafts()` only if the same user signs back in to the same project; otherwise it is dropped. A normal sign-out clears drafts.
+- Accessibility: clickable non-buttons get `role="button"`, `tabindex="0"`, an `aria-label` and a `data-action`; Enter/Space then runs the action. `.fg > label` is linked to its field automatically (`linkLabels` in `ui.js`), so keep that markup shape or add `aria-label`. Collapsed phases use `visibility:hidden` so their fields leave the tab order. Tag text colors are darkened for 4.5:1 contrast; don't revert them. `:focus-visible` shows a teal ring.
+- `notify-admins` sends at most 20 emails per project per hour (counted from `activity_log` rows `session_request_emailed`, `upload_emailed`, `customer_notified`, field `detail.sent`); over the limit it returns 429. Any new email-sending kind must log one of these actions with `sent`.
+- `0009_hardening.sql` revokes EXECUTE on trigger functions from API roles. New trigger functions must be revoked the same way; new RPCs must be granted to `authenticated` only.
+- `netlify/functions/keep-alive.mjs` runs daily (Scheduled Function) with a trivial service-role select so the free-tier database doesn't pause. Delete it once Supabase is on Pro.
+- Tests: `supabase/tests/rls_checks.sql` (SQL editor) and `supabase/tests/rest_isolation.mjs` (two throwaway projects, checks isolation through REST/RPC/Storage with real client JWTs). Extend both when access rules change. `tests/local/` holds the local harness (Postgres + PostgREST + `supabase-proxy.mjs`) and the e2e suites.
+- Docs for non-developers: `docs/RUNBOOK.md`, `docs/QA_CHECKLIST.md`, `docs/MANUAL_UPDATES.md`. Keep the runbook in step with any UI label you change.

@@ -352,3 +352,25 @@ input,select,textarea{font-family:var(--fb)}
 .rnone{font-size:.84rem;color:var(--g4)}
 .rerr{font-size:.8rem;color:var(--e6);margin-top:6px}
 .rerr:empty{display:none}
+
+/* Accessibility (Prompt 7)
+   Tag text darkened within the same hue so small uppercase labels reach
+   WCAG AA 4.5:1 on their existing backgrounds. Backgrounds are unchanged. */
+.ty{color:#92400e}.tf{color:#0f766e}.tb{color:#4338ca}.td{color:#166534}.tl{color:#4b5563}
+.fbadge{color:#0f766e}
+.pill-st.on{color:#166534}.pill-st.off{color:#4b5563}
+.pill-ob{color:#92400e}
+.attr.ob{color:#b45309}
+.obb{color:#92400e}
+.eddirty{color:#92400e}
+
+/* Visible keyboard focus everywhere (mouse clicks don't show it) */
+:focus-visible{outline:2px solid var(--tl);outline-offset:2px}
+.nav :focus-visible,.lalt :focus-visible,.login-page .ll :focus-visible{outline-color:var(--cy4)}
+.fg input:focus-visible,.fg select:focus-visible,.fg textarea:focus-visible,.otp input:focus-visible,.edname:focus-visible,.edtxt:focus-visible{outline:none}
+[role="button"]{cursor:pointer}
+.sc[role="button"]:focus-visible{outline-offset:3px}
+/* Collapsed phases: keep the same slide animation, but take hidden content out
+   of the tab order (visibility flips after the collapse finishes). */
+.pb{visibility:hidden;transition:max-height .4s ease,visibility .4s}
+.pc.open .pb{visibility:visible}

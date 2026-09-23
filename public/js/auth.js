@@ -4,6 +4,7 @@
 //   recovery or invite link.
 import { supabase, configured } from './supabase.js';
 import { loadProfile, loadProject } from './data.js';
+import { EXPIRED_MSG } from './ui.js';
 
 const NEUTRAL_OTP = "If this email is registered, we've sent a 6-digit code. It expires in 10 minutes.";
 const NEUTRAL_RESET = "If this email is registered, we've sent a link to reset your password.";
@@ -21,6 +22,8 @@ let hooks = { onSignedIn() {}, onSignedOut() {} };
 let otpEmail = '';
 let resendTimer = null;
 let currentUserId = null;
+let userSignedOut = false; // true while a sign-out the user asked for is in progress
+let lastIdentity = null;   // { email, staff } of the signed-in person, to pre-fill after expiry
 
 const $ = id => document.getElementById(id);
 const VIEWS = ['vEmail', 'vCode', 'vStaff', 'vForgot', 'vNewPw'];
@@ -140,6 +143,7 @@ async function handleSession(session) {
   }
 
   clearMsg();
+  lastIdentity = { email: profile.email, staff: profile.role === 'admin' };
   hooks.onSignedIn({
     id: profile.user_id,
     name: profile.full_name || profile.email,
@@ -167,8 +171,18 @@ function resetLoginUi() {
 // ---------------------------------------------------------------------------
 
 export async function signOut() {
+  userSignedOut = true;
+  lastIdentity = null;
   const { error } = await supabase.auth.signOut();
   if (error) await supabase.auth.signOut({ scope: 'local' });
+}
+
+// Called when an API call reports an expired or invalid session.
+let expiring = false;
+export async function expireSession() {
+  if (!currentUserId || expiring) return;
+  expiring = true;
+  try { await supabase.auth.signOut({ scope: 'local' }); } finally { expiring = false; }
 }
 
 export function initAuth(h) {
@@ -281,8 +295,18 @@ export function initAuth(h) {
     if (event === 'SIGNED_OUT') {
       setTimeout(() => {
         const wasIn = currentUserId !== null;
+        const expired = wasIn && !userSignedOut;
+        userSignedOut = false;
         currentUserId = null;
-        if (wasIn) { resetLoginUi(); hooks.onSignedOut(); }
+        if (!wasIn) return;
+        resetLoginUi();
+        if (expired) {
+          // Back to the right sign-in form, email filled in, with a plain explanation.
+          if (lastIdentity && lastIdentity.staff) { show('vStaff'); $('sE').value = lastIdentity.email; }
+          else if (lastIdentity) $('lE').value = lastIdentity.email;
+          msg('info', EXPIRED_MSG);
+        }
+        hooks.onSignedOut({ expired });
       }, 0);
       return;
     }

@@ -8,13 +8,13 @@ import {
 import { youtubeId, openVideo } from './resources.js';
 import { portalUrl } from './supabase.js';
 import { openTemplateEditor, openProjectEditor, wireEditor, guardUnsaved, closeEditor } from './phase-editor.js';
-import { toast, openModal, closeModal, registerActions, escapeHtml, daysLeft, slug, fmtDate, fmtSize, safeUrl } from './ui.js';
+import { toast, openModal, closeModal, registerActions, escapeHtml, daysLeft, slug, fmtDate, fmtSize, safeUrl, reportError, errorKind, NETWORK_MSG } from './ui.js';
 
 const esc = escapeHtml;
 const $ = id => document.getElementById(id);
 const RL = { client_lead: 'Client Lead', client_it: 'IT Contact', admin: 'FLO Admin', utility_staff: 'Utility Staff' };
 const loading = '<div style="padding:24px;color:var(--g4);font-size:.9rem">Loading...</div>';
-const failed = e => `<div class="lerr on">Could not load: ${esc(e.message || e)}</div>`;
+const failed = e => `<div class="lerr on">${errorKind(e) === 'network' ? NETWORK_MSG : `Could not load: ${esc(e.message || e)}`}</div>`;
 
 let section = 'projects';
 let tok = 0;
@@ -48,6 +48,7 @@ export async function adminGo(s = section) {
       else c.innerHTML = '<div class="ash"><h2>Phases</h2></div><p style="font-size:.86rem;color:var(--g4)">Select a project first. To change the phases every new project starts with, use Phase Template.</p>';
     }
   } catch (e) {
+    if (errorKind(e) === 'session') { reportError(e); return; }
     if (!stale()) c.innerHTML = failed(e);
   }
 }
@@ -94,7 +95,7 @@ async function renderProjects(c, stale) {
   listRows = rows;
   c.innerHTML = `<div class="ash"><h2>Projects (${rows.filter(r => r.status === 'active').length})</h2><button class="btn btn-sm btn-a" data-action="new-project">+ New project</button></div>
 <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
-<div class="fg" style="margin:0;flex:1;min-width:220px"><input id="aQ" placeholder="Search by name, code or CSM" value="${esc(listQuery)}"></div>
+<div class="fg" style="margin:0;flex:1;min-width:220px"><input id="aQ" aria-label="Search projects" placeholder="Search by name, code or CSM" value="${esc(listQuery)}"></div>
 <label style="font-size:.84rem;color:var(--g6);display:flex;gap:6px;align-items:center"><input type="checkbox" id="aArch" ${showArchived ? 'checked' : ''}> Show archived</label>
 </div>
 <div style="overflow-x:auto"><table class="at"><thead><tr><th>Project</th><th>CSM</th><th>Progress</th><th>Current phase</th><th>Go-live</th><th>Days left</th><th>Ball</th><th></th></tr></thead><tbody id="aRows">${projectRows()}</tbody></table></div>`;
@@ -144,7 +145,7 @@ async function saveProject(btn) {
     try {
       saved = isNew ? await createProject(fields) : await updateProject(S.project.id, fields);
     } catch (e) {
-      toast(e.code === '23505' ? 'That project code is already in use. Pick another.' : 'Could not save the project: ' + esc(e.message), 'err');
+      if (e.code === '23505') toast('That project code is already in use. Pick another.', 'err'); else reportError(e, 'Could not save the project');
       return;
     }
     S.adminNew = false;
@@ -225,7 +226,7 @@ async function createUser(body) {
     else showPortalLink(body.email, r.emailConfigured);
     return true;
   } catch (e) {
-    toast(esc(e.message), 'err');
+    reportError(e);
     return false;
   }
 }
@@ -233,7 +234,7 @@ async function createUser(body) {
 function showPortalLink(email, configured) {
   openModal(`<h2>User created</h2>
 <p style="font-size:.9rem;color:var(--g6);margin-top:8px">${configured ? 'The welcome email could not be sent' : 'Email not configured'}: share the portal link manually with <strong>${esc(email)}</strong>. They sign in with that email address and a one-time code.</p>
-<div class="cplink"><input id="cpL" readonly value="${esc(portalUrl())}"><button class="btn btn-p btn-sm" data-action="copy-link">Copy portal link</button></div>
+<div class="cplink"><input id="cpL" aria-label="Portal link" readonly value="${esc(portalUrl())}"><button class="btn btn-p btn-sm" data-action="copy-link">Copy portal link</button></div>
 <div class="ma"><button class="btn btn-s" data-action="close-modal">Done</button></div>`);
 }
 
@@ -253,7 +254,8 @@ const ACTIONS = {
   project_created: 'Created the project', project_reset: 'Reset project progress', project_archived: 'Archived the project',
   project_restored: 'Restored the project', phases_edited: 'Edited phases', template_applied: 'Applied the template',
   user_created: 'Added a user', user_deactivated: 'Deactivated a user', user_reactivated: 'Reactivated a user',
-  session_request_emailed: 'Session request emailed to FLO', customer_notified: 'Emailed the Client Lead'
+  session_request_emailed: 'Session request emailed to FLO', customer_notified: 'Emailed the Client Lead',
+  upload_emailed: 'Upload emailed to FLO'
 };
 let actRows = [];
 const actF = { kind: 'all', user: '', phase: '' };
@@ -399,7 +401,7 @@ async function saveResourceSetting(key, value, okMsg) {
     hooks.reloadSettings();
     adminGo('resources');
   } catch (e) {
-    toast('Could not save: ' + esc(e.message), 'err');
+    reportError(e, 'Could not save');
   }
 }
 
@@ -423,7 +425,7 @@ async function uploadResourceFile(kind, btn) {
     adminGo('resources');
   } catch (e) {
     $('rp-' + kind).textContent = '';
-    toast('Could not upload: ' + esc(e.message), 'err');
+    reportError(e, 'Could not upload');
   } finally {
     btn.classList.remove('busy');
   }
@@ -449,7 +451,7 @@ registerActions({
       toast('Project progress reset', 'ok');
       await hooks.reload(true);
     } catch (e) {
-      toast('Could not reset: ' + esc(e.message), 'err');
+      reportError(e, 'Could not reset');
     } finally {
       el.classList.remove('busy');
     }
@@ -471,7 +473,7 @@ registerActions({
       if (S.project && S.project.id === r.id) await hooks.selectProject(null, { refresh: true });
       else await hooks.selectProject(S.project && S.project.id, { refresh: true, keep: true });
     } catch (e) {
-      toast('Could not archive: ' + esc(e.message), 'err');
+      reportError(e, 'Could not archive');
     }
     adminGo('projects');
   },
@@ -483,7 +485,7 @@ registerActions({
       toast('Project restored', 'ok');
       await hooks.selectProject(S.project && S.project.id, { refresh: true, keep: true });
     } catch (e) {
-      toast('Could not restore: ' + esc(e.message), 'err');
+      reportError(e, 'Could not restore');
     }
     adminGo('projects');
   },
@@ -534,7 +536,7 @@ registerActions({
       await callFunction('admin-deactivate-user', { user_id: el.dataset.id, reactivate: on });
       toast(on ? 'User reactivated' : 'User deactivated', 'ok');
     } catch (e) {
-      toast(esc(e.message), 'err');
+      reportError(e);
     }
     adminGo('users');
   }

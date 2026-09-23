@@ -22,14 +22,19 @@ export const sql = q => execSync(`psql -h /var/tmp/flopg -p 5433 -U postgres -d 
 export const storage = new Map();   // path -> {bytes, owner}
 export const resources = new Map(); // resources bucket
 export const log = [];
+// Test switches: offline = requests fail; expired = session no longer valid.
+export const control = { offline: false, expired: false };
 export const channels = [];         // realtime sockets {ws, topic, ids}
 
 export async function mock(ctx) {
   await ctx.route('https://www.youtube-nocookie.com/**', r => { log.push('YT ' + r.request().url()); r.fulfill({ status: 200, contentType: 'text/html', body: '<html><body style="background:#000;color:#fff">video</body></html>' }); });
   await ctx.route('https://test.supabase.co/**', async route => {
     const q = route.request(), u = new URL(q.url()), h = q.headers();
+    if (control.offline) return route.abort('internetdisconnected');
     const f = (s, j) => route.fulfill({ status: s, contentType: 'application/json', body: JSON.stringify(j) });
     const p = u.pathname;
+    if (control.expired && p.startsWith('/rest/v1/')) return route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST301', message: 'JWT expired' }) });
+    if (control.expired && p === '/auth/v1/token' && u.searchParams.get('grant_type') === 'refresh_token') return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 400, error_code: 'refresh_token_not_found', msg: 'Invalid Refresh Token: Refresh Token Not Found' }) });
     if (p.startsWith('/rest/v1/')) {
       const res = await route.fetch({ url: 'http://127.0.0.1:3001' + p.slice(8) + u.search });
       if (res.status() >= 400) log.push(`REST ${res.status()} ${q.method()} ${p}${u.search} ${(await res.text()).slice(0, 160)}`);

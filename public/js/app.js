@@ -1,12 +1,12 @@
 import './network-canvas.js';
 import { S, isAdmin, hooks } from './state.js';
-import { initAuth, signOut } from './auth.js';
+import { initAuth, signOut, expireSession } from './auth.js';
 import {
   loadProject, listProjectOverview, listProfiles, loadPhasesAndSteps, loadForms, loadUploads,
   loadSettings, setStepDone, subscribeProject, loadDirectory, callFunction, subscribeSettings
 } from './data.js';
-import { toast, openModal, closeModal, registerActions, wireActions, escapeHtml, daysLeft } from './ui.js';
-import { wireWidgets, fillThumbs, applyDrafts, flushAll } from './widgets.js';
+import { toast, openModal, closeModal, registerActions, wireActions, escapeHtml, daysLeft, reportError, errorKind, setSessionExpiredHandler } from './ui.js';
+import { wireWidgets, fillThumbs, applyDrafts, flushAll, resumeDrafts, clearDrafts } from './widgets.js';
 import { phaseCard, stepLabel } from './render.js';
 import { resourcesRow } from './resources.js';
 import { adminGo, currentSection } from './admin.js';
@@ -65,7 +65,7 @@ async function reload(force = false) {
   if (!S.project) return;
   const seq = loadSeq, id = S.project.id;
   let d;
-  try { d = await fetchProjectData(id); } catch (e) { console.warn('refresh', e.message); return; }
+  try { d = await fetchProjectData(id); } catch (e) { if (errorKind(e) === 'session') expireSession(); else console.warn('refresh', e.message); return; }
   if (seq !== loadSeq || !S.project || S.project.id !== id) return;
   const key = JSON.stringify(d);
   if (!force && key === lastKey) return;
@@ -124,7 +124,7 @@ const canToggle = s => isAdmin() || s.owner !== 'flo';
 // ---------------------------------------------------------------------------
 
 function nextCard(nx) {
-  return nx ? `<div class="na" data-action="jump" data-step="${nx.s.id}"><div class="nai">▶</div><div class="nab"><div class="nal">Next Step</div><div class="nat">${esc(nx.s.text)}</div><div class="nad">Phase ${phaseNo(nx.p)}: ${esc(nx.p.name)}</div></div><div class="nag">→</div></div>` : '';
+  return nx ? `<div class="na" data-action="jump" data-step="${nx.s.id}" role="button" tabindex="0" aria-label="Next step: ${esc(nx.s.text)}"><div class="nai">▶</div><div class="nab"><div class="nal">Next Step</div><div class="nat">${esc(nx.s.text)}</div><div class="nad">Phase ${phaseNo(nx.p)}: ${esc(nx.p.name)}</div></div><div class="nag">→</div></div>` : '';
 }
 
 function emptyJourney() {
@@ -171,7 +171,7 @@ function rSt() {
   ph.forEach(p => { if (p.status === 'complete') return; p.steps.forEach((s, i) => { if (s.done) return; (s.owner === 'flo' ? fi : yi).push({ s, p, label: stepLabel(phaseNo(p), i) }); }); });
   const sub = i => `Phase ${phaseNo(i.p)} · Step ${i.label}`;
   $('sCols').innerHTML = `
-<div class="card"><div class="ch"><h3>🎯 Your Items</h3><span class="btn btn-g btn-sm">${yi.length}</span></div><div class="cb">${yi.length ? yi.map(i => `<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--g1);cursor:pointer" data-action="jump" data-step="${i.s.id}"><div style="width:24px;height:24px;border-radius:50%;background:var(--w1);display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0;margin-top:2px">🏐</div><div><div style="font-size:.85rem;font-weight:600;color:var(--g8)">${esc(i.s.text)}</div><div style="font-size:.76rem;color:var(--g5);margin-top:1px">${sub(i)}</div></div></div>`).join('') : '<div style="text-align:center;padding:24px;color:var(--g4)"><div style="font-size:2rem;margin-bottom:6px">🎉</div><p style="font-size:.86rem">Nothing waiting on you!</p></div>'}</div></div>
+<div class="card"><div class="ch"><h3>🎯 Your Items</h3><span class="btn btn-g btn-sm">${yi.length}</span></div><div class="cb">${yi.length ? yi.map(i => `<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--g1);cursor:pointer" data-action="jump" data-step="${i.s.id}" role="button" tabindex="0"><div style="width:24px;height:24px;border-radius:50%;background:var(--w1);display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0;margin-top:2px">🏐</div><div><div style="font-size:.85rem;font-weight:600;color:var(--g8)">${esc(i.s.text)}</div><div style="font-size:.76rem;color:var(--g5);margin-top:1px">${sub(i)}</div></div></div>`).join('') : '<div style="text-align:center;padding:24px;color:var(--g4)"><div style="font-size:2rem;margin-bottom:6px">🎉</div><p style="font-size:.86rem">Nothing waiting on you!</p></div>'}</div></div>
 <div class="card"><div class="ch"><h3>⏳ Waiting on FLO</h3><span class="btn btn-g btn-sm">${fi.length}</span></div><div class="cb">${fi.length ? fi.map(i => `<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--g1)"><div style="width:24px;height:24px;border-radius:50%;background:var(--cy0);display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0;margin-top:2px">🔄</div><div><div style="font-size:.85rem;font-weight:600;color:var(--g8)">${esc(i.s.text)}</div><div style="font-size:.76rem;color:var(--g5);margin-top:1px">${sub(i)}</div></div></div>`).join('') : '<div style="text-align:center;padding:24px;color:var(--g4)"><div style="font-size:2rem;margin-bottom:6px">⚡</div><p style="font-size:.86rem">FLO has no pending items.</p></div>'}</div></div>`;
 }
 
@@ -251,13 +251,13 @@ async function toggleStep(el, { confirmed = false, mail = false } = {}) {
     await setStepDone(f.s.id, !f.s.done);
   } catch (e) {
     el.classList.remove('busy');
-    toast('Could not update this step: ' + esc(e.message), 'err');
+    reportError(e, 'Could not update this step');
     return;
   }
   if (mail) {
     callFunction('notify-admins', { kind: 'step_completed_on_behalf', step_id: f.s.id })
       .then(r => toast(r.emailSent ? "Client Lead notified" : r.emailConfigured === false ? 'Email not configured: no note sent' : 'No active Client Lead to notify', r.emailSent ? 'ok' : 'info'))
-      .catch(e => toast('Could not send the note: ' + esc(e.message), 'err'));
+      .catch(e => reportError(e, 'Could not send the note'));
   }
   await reload(true);
   const now = S.phases.find(p => p.id === f.p.id);
@@ -332,9 +332,18 @@ async function enter(user, project) {
     await openProject(project);
     goTab('journey');
   }
+  // Form input typed before a session expired is still in memory: save it now.
+  const saved = await resumeDrafts();
+  if (saved) {
+    toast('We saved the changes you made before your session expired.', 'ok');
+    renderAll();
+  }
 }
 
-function leaveApp() {
+function leaveApp({ expired = false } = {}) {
+  // Keep unsaved form input only when the session expired, so it can be saved
+  // after the same person signs in again. A normal sign-out drops it.
+  if (!expired) clearDrafts();
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
   if (unsubSettings) { unsubSettings(); unsubSettings = null; }
   loadSeq++;
@@ -367,6 +376,7 @@ registerActions({
     const id = el.dataset.phase;
     if (S.open.has(id)) S.open.delete(id); else S.open.add(id);
     $('p-' + id).classList.toggle('open', S.open.has(id));
+    el.setAttribute('aria-expanded', String(S.open.has(id)));
   },
   'toggle-step': el => toggleStep(el),
   'switch-project': el => {
@@ -386,6 +396,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Earlier versions kept all app data in localStorage. Remove it.
   try { localStorage.removeItem('flo_v3'); } catch { /* ignore */ }
   wireActions();
+  setSessionExpiredHandler(() => expireSession());
+  window.addEventListener('offline', () => { if (S.user) toast("You're offline. Changes can't be saved until your connection is back.", 'err'); });
+  window.addEventListener('online', () => { if (S.user) { toast('Back online', 'ok'); reload(true); hooks.reloadSettings(); } });
   wireWidgets($('jPh'));
   initAuth({ onSignedIn: enter, onSignedOut: leaveApp });
 });

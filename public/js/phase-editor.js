@@ -7,7 +7,7 @@ import {
   saveProjectPhases, setPhaseStatus, loadArchived, signedUrl
 } from './data.js';
 import { phaseCard, stepLabel } from './render.js';
-import { toast, openModal, closeModal, registerActions, escapeHtml as esc, fmtDate, fmtSize } from './ui.js';
+import { toast, openModal, closeModal, registerActions, escapeHtml as esc, fmtDate, fmtSize, reportError } from './ui.js';
 
 export const STEP_TYPES = [
   ['none', 'Text only', 'Instructions to read. No form.'],
@@ -97,7 +97,7 @@ function configEditor(s) {
     const opts = (s.config.options || []);
     return `<div class="edcfg"><div class="edcfg-t">Options</div>
 <table class="edopt"><thead><tr><th>Label</th><th>Value</th><th>Help text</th><th></th></tr></thead><tbody>
-${opts.map((o, i) => `<tr><td><input data-opt-f="label" data-opt-i="${i}" data-st="${s.id}" value="${esc(o.label)}"></td><td><input data-opt-f="value" data-opt-i="${i}" data-st="${s.id}" value="${esc(o.value)}"></td><td><input data-opt-f="help" data-opt-i="${i}" data-st="${s.id}" value="${esc(o.help)}"></td><td><button class="btn btn-g btn-sm" data-action="ed-opt-del" data-st="${s.id}" data-i="${i}" title="Remove option" aria-label="Remove option">✕</button></td></tr>`).join('')}
+${opts.map((o, i) => `<tr><td><input aria-label="Option label" data-opt-f="label" data-opt-i="${i}" data-st="${s.id}" value="${esc(o.label)}"></td><td><input aria-label="Option value" data-opt-f="value" data-opt-i="${i}" data-st="${s.id}" value="${esc(o.value)}"></td><td><input aria-label="Option help text" data-opt-f="help" data-opt-i="${i}" data-st="${s.id}" value="${esc(o.help)}"></td><td><button class="btn btn-g btn-sm" data-action="ed-opt-del" data-st="${s.id}" data-i="${i}" title="Remove option" aria-label="Remove option">✕</button></td></tr>`).join('')}
 </tbody></table><button class="btn btn-g btn-sm" data-action="ed-opt-add" data-st="${s.id}">+ Add option</button></div>`;
   }
   if (s.type === 'upload_files') {
@@ -382,7 +382,7 @@ export function computeApply(tpl, proj, hasData) {
 async function applyTemplate() {
   if (isDirty()) { toast('Save or discard your changes first', 'err'); return; }
   let tpl, v;
-  try { [tpl, v] = await Promise.all([loadTemplate(), latestVersion()]); } catch (e) { toast('Could not load the template: ' + esc(e.message), 'err'); return; }
+  try { [tpl, v] = await Promise.all([loadTemplate(), latestVersion()]); } catch (e) { reportError(e, 'Could not load the template'); return; }
   const { diff, phases } = computeApply(tpl, ed.phases, id => !!stepData(id));
   ed.pendingApply = { phases, version: v.latest };
   const list = (title, rows, cls) => rows.length ? `<h3 class="edsec">${title} (${rows.length})</h3><ul class="eddiff ${cls}">${rows.map(r => `<li><strong>${esc(r.kind)}:</strong> ${esc(r.text)}${r.note ? ` <span>(${esc(r.note)})</span>` : ''}</li>`).join('')}</ul>` : '';
@@ -396,7 +396,7 @@ ${list('Added', diff.added, 'add')}${list('Removed', diff.removed, 'rem')}${list
 
 async function showArchived() {
   let a;
-  try { a = await loadArchived(S.project.id); } catch (e) { toast('Could not load archived items: ' + esc(e.message), 'err'); return; }
+  try { a = await loadArchived(S.project.id); } catch (e) { reportError(e, 'Could not load archived items'); return; }
   ed.archived = a;
   const byStep = id => ({ form: a.forms.find(f => f.project_step_id === id), ups: a.uploads.filter(u => u.project_step_id === id) });
   const orphanUps = a.uploads.filter(u => !a.steps.find(s => s.id === u.project_step_id));
@@ -478,7 +478,7 @@ async function save(btn) {
       start('project', ed.container, S.phases, { latestVersion: ed.latestVersion });
     }
   } catch (e) {
-    toast('Could not save: ' + esc(e.message), 'err');
+    reportError(e, 'Could not save');
   } finally {
     btn.classList.remove('busy');
   }
@@ -551,7 +551,7 @@ registerActions({
       const nv = await restoreTemplateVersion(+el.dataset.v);
       toast(`Restored. Saved as version ${nv}.`, 'ok');
       await openTemplateEditor(ed.container);
-    } catch (e) { toast('Could not restore: ' + esc(e.message), 'err'); }
+    } catch (e) { reportError(e, 'Could not restore'); }
   },
   'ed-apply': () => applyTemplate(),
   'ed-apply-go': async el => {
@@ -568,7 +568,7 @@ registerActions({
       await hooks.reload(true);
       start('project', ed.container, S.phases, { latestVersion: ed.latestVersion });
     } catch (e) {
-      toast('Could not apply the template: ' + esc(e.message), 'err');
+      reportError(e, 'Could not apply the template');
     } finally {
       el.classList.remove('busy');
     }
@@ -577,7 +577,7 @@ registerActions({
   'ed-arch-dl': async el => {
     const u = ed.archived && ed.archived.uploads.find(x => x.id === el.dataset.id);
     if (!u) return;
-    try { location.href = await signedUrl(u.storage_path, u.file_name || true); } catch (e) { toast('Could not create a download link: ' + esc(e.message), 'err'); }
+    try { location.href = await signedUrl(u.storage_path, u.file_name || true); } catch (e) { reportError(e, 'Could not create a download link'); }
   }
 });
 
@@ -628,7 +628,7 @@ function onField(e) {
     const id = t.dataset.phStatus, p = findPhase(id);
     setPhaseStatus(id, t.value)
       .then(() => { p.status = t.value; toast('Phase status updated', 'ok'); refreshPreview(); return hooks.reload(true); })
-      .catch(err => toast('Could not update the phase: ' + esc(err.message), 'err'));
+      .catch(err => reportError(err, 'Could not update the phase'));
     return;
   } else return;
   refreshDirty();

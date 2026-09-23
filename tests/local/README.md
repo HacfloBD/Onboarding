@@ -33,7 +33,20 @@ PLAYWRIGHT_PATH=/path/to/playwright/index.mjs OUT=/tmp node tests/local/e2e-p3-d
 | `e2e-p4-editor.mjs` | phase template, versions, per-project editor, apply template, archiving |
 | `e2e-p5-on-behalf.mjs` | on-behalf actions, attribution, spoofing, activity timeline |
 | `e2e-p6-resources.mjs` | resources strip, video modal, manual/template uploads |
+| `e2e-p7-hardening.mjs` | labels, keyboard, focus, tag contrast, network and session-expiry errors (incl. sign-out in another tab), kept drafts, 375px overflow |
 | `fn-notify*.mjs` | `notify-admins` function against the real schema |
 
 `build-setup.sh` rebuilds `supabase/setup.sql` from the migrations.
 SQL-level security checks live in `supabase/tests/rls_checks.sql`.
+
+## REST isolation against the local stack
+
+`supabase-proxy.mjs` is a small stand-in for a Supabase project (auth admin
+create/delete, password sign-in, REST passthrough to PostgREST, storage
+uploads checked against the storage policies). It prints the local URL and
+keys, which `supabase/tests/rest_isolation.mjs` then uses:
+
+```bash
+node tests/local/supabase-proxy.mjs > /tmp/proxy.env &
+env $(grep -E '^SUPABASE_' /tmp/proxy.env | xargs) node supabase/tests/rest_isolation.mjs
+```

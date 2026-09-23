@@ -298,6 +298,10 @@ export async function callFunction(name, body) {
   });
   let json = {};
   try { json = await res.json(); } catch { /* empty body */ }
-  if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    const err = new Error(json.error || `Request failed (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
   return json;
 }
