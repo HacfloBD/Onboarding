@@ -1,0 +1,205 @@
+{
+  "_source": "FLO Onboarding Portal User Manual v2.0, April 2026 (sections 3.1 to 3.5). Master template seed. Editable later in Admin > Phase Template.",
+  "phases": [
+    {
+      "position": 1,
+      "name": "Pre-Onboarding Assessment & Kick-off",
+      "short": "Kick-off",
+      "owner": "both",
+      "duration": "Week 1",
+      "description": "Phase 1 sets the foundation. Instead of asking you to fill out reams of paperwork, FLO comes to you. We walk through the 6 Pillars of Cross-Connection Control compliance together (Legal Foundation, Discovery, Protection, Testing, Remediation, Inspection Continuity), document where your program stands, and use that picture to configure FLO around your reality. This phase is conversational. No data uploads are required.",
+      "completion_message": "Great start! Your kick-off information is in and your 6-Pillar assessment is documented. Next: send us your data in Phase 2, in whatever format you have.",
+      "steps": [
+        {
+          "position": 1,
+          "text": "Provide your organization details",
+          "owner": "client",
+          "type": "form_org_details",
+          "detail": "Capture the basics: organization name, service area, state, project lead contact info, IT contact, approximate counts of facilities and tester companies, current legacy system, and team roles. Auto-saves as you type. Takes about 5 minutes."
+        },
+        {
+          "position": 2,
+          "text": "Schedule your 6-Pillar assessment session",
+          "owner": "client",
+          "type": "form_schedule_session",
+          "detail": "Pick a preferred date and time, and choose in-person (HAC Texas comes to you) or virtual (Teams or Zoom). The session is 1 to 2 hours and walks through each pillar with your CSM and an HAC Texas expert. Prefer to look first on your own? Use the CCC Compliance Assessment tool linked below; it covers the same 6 pillars and produces a score with recommendations. Bring the results to your CSM session.",
+          "config": { "self_service_link_setting": "ccc_assessment_url", "self_service_link_label": "Open the CCC Compliance Assessment tool" }
+        },
+        {
+          "position": 3,
+          "text": "Confirm your testing frequency model",
+          "owner": "client",
+          "type": "form_frequency",
+          "detail": "How does your jurisdiction determine when backflow assemblies are due for testing? Select a model and cite the state or local code that drives your choice.",
+          "config": {
+            "options": [
+              { "value": "calendar_year", "label": "Calendar Year", "help": "All assemblies due by December 31. Compliance clock resets January 1. Creates year-end workload concentration." },
+              { "value": "rolling_12", "label": "Rolling 12 Months", "help": "Each assembly due 12 months from its last passing test. Spreads workload evenly throughout the year." },
+              { "value": "fixed_anniversary", "label": "Fixed Anniversary", "help": "Each assembly due on the same date each year, anchored to installation or first test date." },
+              { "value": "custom", "label": "Custom / Hybrid", "help": "Different frequencies for different assembly types or hazard levels (e.g., RP every 6 months, DC annually)." },
+              { "value": "not_sure", "label": "Not sure", "help": "Pick this if you want your CSM to help you decide based on your jurisdiction and ordinance." }
+            ]
+          }
+        },
+        {
+          "position": 4,
+          "text": "FLO documents the assessment and prepares the migration plan",
+          "owner": "flo",
+          "type": "none",
+          "detail": "Your CSM compiles the assessment notes, identifies data gaps, and prepares a migration plan tailored to what you have."
+        }
+      ]
+    },
+    {
+      "position": 2,
+      "name": "Data Collection & Migration",
+      "short": "Data",
+      "owner": "both",
+      "duration": "1-3 Weeks",
+      "description": "This is where your data moves into FLO. You do not need to format your data into our template unless you want to. FLO does the cleanup, normalization, and migration regardless of how the data arrives.",
+      "completion_message": "Your data is migrated and signed off! Next: a half-day joint setup session to configure branding, notices, and compliance rules.",
+      "steps": [
+        {
+          "position": 1,
+          "text": "Send us your data",
+          "owner": "client",
+          "type": "upload_files",
+          "detail": "Option A: send what you have. Drop any files into the upload area: Excel, CSV, exports from your old system, scanned documents, anything. Option B: use our master template (8 tabs covering facilities, contacts, assemblies, testers, test history, surveys), fill it in offline, and upload it back. Or paste a Google Drive, SharePoint, or Dropbox link that gives view access to your CSM. Most customers find Option A faster.",
+          "config": { "show_master_template_download": true, "allow_share_link": true, "accept": "*", "max_files": 10 }
+        },
+        {
+          "position": 2,
+          "text": "Optional: API integration with your billing system",
+          "owner": "client",
+          "type": "form_api_integration",
+          "detail": "Want FLO to integrate with your utility billing system for automatic customer updates (addresses, ownership changes, account status)? Tell us here. Most customers skip this at launch and revisit it later."
+        },
+        {
+          "position": 3,
+          "text": "FLO cleans, deduplicates, and migrates your data",
+          "owner": "flo",
+          "type": "none",
+          "detail": "We parse your files, normalize formats (addresses, phone numbers, dates), match facilities by address, link assemblies to facilities, and import everything into a staging environment. If we have questions, your CSM will reach out."
+        },
+        {
+          "position": 4,
+          "text": "Review your data in staging",
+          "owner": "both",
+          "type": "none",
+          "detail": "Your CSM walks you through the imported data on a call. Spot-check facilities, assemblies, contacts, and test history. Flag anything that looks wrong."
+        },
+        {
+          "position": 5,
+          "text": "Sign off on migrated data",
+          "owner": "client",
+          "type": "none",
+          "detail": "Confirm the data in staging is accurate. This is the green light to proceed with platform setup."
+        }
+      ]
+    },
+    {
+      "position": 3,
+      "name": "Setup & Configuration",
+      "short": "Setup",
+      "owner": "both",
+      "duration": "Half Day (Joint Session)",
+      "description": "A single half-day working session where FLO and your team configure the platform together. Notice templates, branding, compliance rules, and notification automation all happen in one sitting. The goal is for you to learn how to make changes yourself, so you are not dependent on FLO for routine adjustments later.",
+      "completion_message": "Setup complete! Next: training for your admins and staff.",
+      "steps": [
+        {
+          "position": 1,
+          "text": "Provide your branding",
+          "owner": "client",
+          "type": "form_branding",
+          "detail": "Sender display name (e.g., Springfield Water - Backflow Compliance), reply-to email address (where property owners and testers will reach you), and your logo (PNG or JPG, transparent background preferred)."
+        },
+        {
+          "position": 2,
+          "text": "Joint setup session: notice templates",
+          "owner": "both",
+          "type": "none",
+          "detail": "FLO provides default notice templates for 60/30/7-day test due reminders, overdue notices, non-compliance escalation, tester certification expiry warnings, and gauge calibration expiry. Together we review each template; duplicate any you want to customize and edit wording, regulatory references, or legal language to match your jurisdiction."
+        },
+        {
+          "position": 3,
+          "text": "Joint setup session: compliance rules and testing frequency",
+          "owner": "both",
+          "type": "none",
+          "detail": "Based on your Phase 1 answers, FLO configures the compliance calendar, due date calculations, grace periods, and notification triggers. You watch the configuration happen in real time so you can adjust later if needed."
+        },
+        {
+          "position": 4,
+          "text": "Confirm setup looks correct",
+          "owner": "client",
+          "type": "none",
+          "detail": "Review the configuration summary together. Make any final tweaks before training begins."
+        }
+      ]
+    },
+    {
+      "position": 4,
+      "name": "Training",
+      "short": "Training",
+      "owner": "flo",
+      "duration": "1 Week",
+      "description": "Your team learns how to use the platform. Training combines live sessions, self-service video content, and an in-platform AI assistant called Ask Flo for ongoing reference.",
+      "completion_message": "Training complete! Final step: UAT and go-live.",
+      "steps": [
+        {
+          "position": 1,
+          "text": "Schedule training sessions",
+          "owner": "both",
+          "type": "none",
+          "detail": "Live sessions are scheduled with your CSM. Two sessions cover utility users; tester companies are handled separately via a self-service landing page."
+        },
+        {
+          "position": 2,
+          "text": "Attend Utility Admin Training (2 hours, live)",
+          "owner": "client",
+          "type": "none",
+          "detail": "Full platform walkthrough: dashboard navigation, managing users, running compliance reports, customizing notice templates, the Resolution Center for failed tests, and configuration toggles."
+        },
+        {
+          "position": 3,
+          "text": "Attend Utility Staff Training (1.5 hours, live)",
+          "owner": "client",
+          "type": "none",
+          "detail": "Day-to-day usage: searching facilities, viewing assemblies, reviewing test results, generating reports, and using Ask Flo for self-service help."
+        },
+        {
+          "position": 4,
+          "text": "FLO publishes the Tester Self-Service Landing Page",
+          "owner": "flo",
+          "type": "none",
+          "detail": "Tester companies and field testers get their own login URL with video tutorials, an Ask Flo chatbot, and an 800-number fallback for users who prefer to call."
+        },
+        {
+          "position": 5,
+          "text": "Add your team members to the platform",
+          "owner": "client",
+          "type": "none",
+          "detail": "Now that your admins know how, add utility staff directly. User management is fully self-service from this point forward."
+        }
+      ]
+    },
+    {
+      "position": 5,
+      "name": "UAT & Go-Live",
+      "short": "Go-Live",
+      "owner": "both",
+      "duration": "3-5 Days",
+      "description": "The final phase. Your team tests the platform in production with real data, verifies everything works, and signs off. Then FLO flips the switch and your platform goes live. Your CSM provides 2 to 4 weeks of hypercare support after go-live.",
+      "completion_message": "Congratulations! Your BPA Compliance Platform is LIVE. Your CSM will provide 2 to 4 weeks of hypercare support.",
+      "steps": [
+        { "position": 1, "text": "Log in as Utility Admin and verify your dashboard", "owner": "client", "type": "none", "detail": "Make sure you can see all facilities, assemblies, and contacts." },
+        { "position": 2, "text": "Search 3 or more facilities and verify data accuracy", "owner": "client", "type": "none", "detail": "Spot-check addresses, account numbers, and assembly details against your source records." },
+        { "position": 3, "text": "Submit a test report in test mode", "owner": "both", "type": "none", "detail": "Walk through the tester flow to make sure reports appear correctly." },
+        { "position": 4, "text": "Trigger a notice send in test mode", "owner": "both", "type": "none", "detail": "Verify the email arrives with correct content and branding." },
+        { "position": 5, "text": "Verify due dates are calculating correctly", "owner": "client", "type": "none", "detail": "Check 3 or more assemblies against your testing frequency model." },
+        { "position": 6, "text": "Run a compliance status report", "owner": "client", "type": "none", "detail": "Confirm the numbers make sense: total assemblies, compliant, overdue." },
+        { "position": 7, "text": "Sign off on UAT", "owner": "client", "type": "none", "detail": "Your formal approval to go live." },
+        { "position": 8, "text": "Go-live confirmed. Platform is LIVE!", "owner": "both", "type": "none", "detail": "We flip the switch. Your compliance engine starts running." }
+      ]
+    }
+  ]
+}
