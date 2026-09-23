@@ -6,7 +6,8 @@ portal.
 
 - **Local**: verified by Claude against a local copy of the real database schema
   and security rules, in Chromium at 1280px and 375px wide
-  (`tests/local/` suites, 190 automated checks, plus side-by-side screenshots and
+  (`tests/local/` suites: 192 browser and function checks, 69 SQL and 25 REST
+  isolation checks, all passing, plus side-by-side screenshots and
   measured styles).
 - **Preview**: to be ticked by a person on the Netlify deploy preview
   (`https://deploy-preview-1--hacflo-onboarding.netlify.app`) against the real
