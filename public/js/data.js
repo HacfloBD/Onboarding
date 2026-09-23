@@ -209,8 +209,49 @@ export async function signedUrls(paths) {
   return Object.fromEntries(rows.filter(r => r.signedUrl).map(r => [r.path, r.signedUrl]));
 }
 
-export function resourceUrl(path) {
-  return supabase.storage.from('resources').getPublicUrl(path).data.publicUrl;
+// Public URL of a file in the "resources" bucket. With downloadName the
+// response is sent as an attachment with that file name.
+export function resourceUrl(path, downloadName) {
+  return supabase.storage.from('resources').getPublicUrl(path, downloadName ? { download: downloadName } : undefined).data.publicUrl;
+}
+
+// Admin: upload a new resource file under folder/ (a new unique path each
+// time, so no cache can serve the old file) and return its metadata.
+export async function uploadResource(folder, file, contentType) {
+  const safe = file.name.replace(/[^\w.\-]+/g, '_').slice(-120) || 'file';
+  const path = `${folder}/${Date.now()}-${safe}`;
+  // Re-wrap with an explicit type: browsers sometimes report an empty type for
+  // .xlsx, and the bucket only accepts PDF and Excel types.
+  const typed = new File([file], file.name, { type: contentType });
+  check(await supabase.storage.from('resources').upload(path, typed, { contentType, upsert: false, cacheControl: '3600' }));
+  return { path, file_name: file.name, size_bytes: file.size, uploaded_at: new Date().toISOString() };
+}
+
+export async function removeResource(path) {
+  const { error } = await supabase.storage.from('resources').remove([path]);
+  if (error) console.warn('remove old resource', error.message);
+}
+
+// Admin: write one app_settings value (null clears it). Logged by a trigger.
+export async function saveSetting(key, value) {
+  check(await supabase.from('app_settings').upsert({ key, value }, { onConflict: 'key' }));
+}
+
+export async function loadSettingRows() {
+  return check(await supabase.from('app_settings').select('key,value,updated_at,updated_by'));
+}
+
+export async function loadResourceLog(limit = 10) {
+  return check(await supabase.from('activity_log').select('*').is('project_id', null)
+    .eq('action', 'resource_updated').order('created_at', { ascending: false }).limit(limit));
+}
+
+// Resource changes arrive live for everyone who is signed in.
+export function subscribeSettings(onChange) {
+  const ch = supabase.channel('app-settings')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, onChange)
+    .subscribe();
+  return () => supabase.removeChannel(ch);
 }
 
 // Admin only. Removes the project's stored files, then clears progress in one RPC.

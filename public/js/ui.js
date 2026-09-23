@@ -11,13 +11,42 @@ export function toast(m, t = 'info') {
   setTimeout(() => { d.style.opacity = '0'; d.style.transform = 'translateX(20px)'; d.style.transition = '.3s'; setTimeout(() => d.remove(), 300); }, 3500);
 }
 
-export function openModal(html) {
-  $('mC').innerHTML = html;
+// Shared modal. opts.wide widens it (880px) for the video player.
+// Escape closes it, Tab stays inside it, and focus returns where it was.
+let lastFocus = null;
+const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),iframe,[tabindex]:not([tabindex="-1"])';
+
+export function openModal(html, { wide = false, label = '' } = {}) {
+  const m = $('mC');
+  if ($('mW').classList.contains('hid')) lastFocus = document.activeElement;
+  m.innerHTML = html;
+  m.classList.toggle('wide', wide);
+  const h = m.querySelector('h2');
+  m.setAttribute('aria-label', label || (h ? h.textContent : 'Dialog'));
   $('mW').classList.remove('hid');
+  const first = m.querySelector('[autofocus]') || m.querySelector(FOCUSABLE);
+  (first || m).focus();
 }
 
+// Emptying the modal also removes any iframe, which stops video playback.
 export function closeModal() {
+  if ($('mW').classList.contains('hid')) return;
   $('mW').classList.add('hid');
+  $('mC').innerHTML = '';
+  $('mC').classList.remove('wide');
+  if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
+  lastFocus = null;
+}
+
+function trapKeys(e) {
+  if ($('mW').classList.contains('hid')) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeModal(); return; }
+  if (e.key !== 'Tab') return;
+  const items = [...$('mC').querySelectorAll(FOCUSABLE)].filter(x => x.offsetParent !== null || x.tagName === 'IFRAME');
+  if (!items.length) { e.preventDefault(); $('mC').focus(); return; }
+  const first = items[0], last = items[items.length - 1];
+  if (e.shiftKey && (document.activeElement === first || !$('mC').contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && (document.activeElement === last || !$('mC').contains(document.activeElement))) { e.preventDefault(); first.focus(); }
 }
 
 // One delegated click/change/input handler for every [data-action] element.
@@ -37,6 +66,14 @@ export function wireActions() {
     if (fn) fn(el, e);
   });
   $('mW').addEventListener('click', e => { if (e.target === $('mW')) closeModal(); });
+  document.addEventListener('keydown', trapKeys);
+  // Keys pressed inside a cross-origin iframe (the YouTube player) never reach
+  // this page, so also pull focus back if it ever lands outside the dialog.
+  document.addEventListener('focusin', e => {
+    if ($('mW').classList.contains('hid') || $('mC').contains(e.target)) return;
+    const first = $('mC').querySelector(FOCUSABLE);
+    (first || $('mC')).focus();
+  });
   registerActions({ 'close-modal': () => closeModal() });
 }
 

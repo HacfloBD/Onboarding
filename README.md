@@ -66,6 +66,7 @@ Build settings come from `netlify.toml`, so nothing needs to be set in the Netli
 
 ## How the data flows
 
+- Admin > Resources manages the overview video (YouTube link), the user manual PDF, the master data template and the CCC Assessment link. Everyone sees the video and manual at the top of Your Journey.
 - Admin > Phase Template edits the master for new projects. Every save is a numbered version with a note, and any version can be restored.
 - Admins can fill in forms, upload and complete steps for a customer. Everything they do on customer-owned steps is recorded "on behalf of your team", shown to the customer, and listed in Admin > Activity (filterable, CSV export).
 - Admin > Phases edits the selected customer's phases only. Steps with customer data are archived rather than deleted (see "Archived items"). "Apply latest template" shows a diff before changing anything.
@@ -89,6 +90,7 @@ public/                  what Netlify serves
   js/phase-editor.js     phase and step editor (template + per project), template diff
   js/render.js           phase card shared by the Journey and the editor preview
   js/attribution.js      "Completed by ..." attribution lines
+  js/resources.js        overview video and user manual strip on the Journey
   js/auth.js             sign-in flows
   js/data.js             all database, storage and function calls
   js/supabase.js         browser Supabase client (anon key)

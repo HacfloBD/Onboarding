@@ -20,6 +20,7 @@ export const isAdmin = () => S.user && S.user.role === 'admin';
 // Late-bound callbacks so modules can trigger each other without import cycles.
 export const hooks = {
   render() {},
+  reloadSettings() {},
   refreshPeople() {},
   reload() {},
   selectProject() {},

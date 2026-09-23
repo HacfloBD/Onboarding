@@ -49,6 +49,7 @@ public/                   Netlify publish dir (everything here reaches the brows
   js/phase-editor.js      phase/step editor for the master template and per-project phases, template diff
   js/render.js            phase card markup shared by the Journey and the editor's live preview
   js/attribution.js       "Completed by / Last updated by / Uploaded by" lines
+  js/resources.js         Journey resources strip (overview video modal, manual download), YouTube URL parsing
   js/auth.js              sign-in flows (customer email code, staff password, reset, invite)
   js/data.js              the ONLY module that talks to Supabase data (tables, storage, RPC, realtime, functions)
   js/supabase.js          the one browser Supabase client (anon key only)
@@ -108,3 +109,8 @@ docs/                     manual, overview, build prompts
 - Names in attribution lines come from the `people_directory()` RPC: customers see admins' first names only, and full names of people in their own project.
 - Admin > Activity is the project timeline (filters: on-behalf only, by user, by phase; CSV export with formula-injection protection).
 - Form-save logging is throttled per form per person (10 minutes), so an admin edit is never hidden behind a recent customer edit.
+
+## Resources (from Prompt 6)
+- `app_settings` keys: `overview_video_url` and `ccc_assessment_url` (text), `manual_file_path` and `master_template_path` (object `{ path, file_name, size_bytes, uploaded_at }` in the public `resources` bucket). Read them with `settingText()` / `resourceFile()` from `resources.js`, never by hand.
+- Admin > Resources is the only writer. Each file upload gets a new unique path (so CDN caches can't serve the old file); the old object is deleted after the setting is saved. Changes are logged by a trigger (`resource_updated`, project_id null) and pushed to every signed-in browser through Realtime.
+- The video embed always uses `https://www.youtube-nocookie.com/embed/{id}?rel=0&modestbranding=1` (allowed by `frame-src` in the CSP). The shared modal (`ui.js`) traps focus, closes on Escape and empties itself on close, which stops playback. Keys pressed inside the cross-origin player never reach the page, so the modal always shows a Close button.

@@ -334,6 +334,11 @@ begin
   select count(*) into n from public.people_directory() where user_id = '00000000-0000-4000-8000-00000000000b';
   insert into rls_results (check_name, result) values
     ('Client cannot look up other projects'' people', case when n = 0 then 'PASS' else 'FAIL' end);
+
+  update public.app_settings set value = to_jsonb('https://evil.example'::text) where key = 'ccc_assessment_url';
+  get diagnostics n = row_count;
+  insert into rls_results (check_name, result) values
+    ('Client cannot change resources settings', case when n = 0 then 'PASS' else 'FAIL' end);
 end;
 $$;
 
@@ -397,6 +402,23 @@ begin
     where project_id = '00000000-0000-4000-9000-00000000000a' and action = 'form_saved' and on_behalf;
   insert into rls_results (check_name, result) values
     ('On-behalf form save is logged as on behalf', case when n >= 1 then 'PASS' else 'FAIL' end);
+
+  -- Resources: an admin setting change is logged with project_id null, then put back.
+  declare
+    old_v jsonb := (select value from public.app_settings where key = 'overview_video_url');
+  begin
+    update public.app_settings set value = to_jsonb('https://youtu.be/rlsTest0001'::text) where key = 'overview_video_url';
+    select count(*) into n from public.activity_log
+      where project_id is null and action = 'resource_updated' and target = 'overview_video_url'
+        and actor_id = '00000000-0000-4000-8000-0000000000ad';
+    insert into rls_results (check_name, result) values
+      ('Admin resource change is logged', case when n = 1 then 'PASS' else 'FAIL' end);
+    select count(*) into n from public.app_settings
+      where key = 'overview_video_url' and updated_by = '00000000-0000-4000-8000-0000000000ad';
+    insert into rls_results (check_name, result) values
+      ('Resource change records who made it', case when n = 1 then 'PASS' else 'FAIL' end);
+    update public.app_settings set value = old_v where key = 'overview_video_url';
+  end;
 
   -- Template copy
   declare

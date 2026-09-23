@@ -1,7 +1,8 @@
 // Step widgets rendered by project_steps.type. Every form auto-saves to
 // form_responses (debounced), uploads go to Storage + the uploads table.
 import { S, isAdmin, hooks } from './state.js';
-import { saveForm, uploadFile, addLink, deleteUpload, signedUrl, signedUrls, resourceUrl, callFunction } from './data.js';
+import { saveForm, uploadFile, addLink, deleteUpload, signedUrl, signedUrls, callFunction } from './data.js';
+import { settingText, resourceDownloadUrl } from './resources.js';
 import { toast, openModal, closeModal, registerActions, escapeHtml, fmtSize, fmtDate, safeUrl } from './ui.js';
 import { formLine, uploaderPhrase } from './attribution.js';
 
@@ -63,14 +64,9 @@ function frm(step, inner, ro) {
 
 const formData = step => (S.forms[step.id] && S.forms[step.id].data) || {};
 
-function settingValue(key) {
-  const v = S.settings[key];
-  return typeof v === 'string' ? v : v && typeof v === 'object' && typeof v.url === 'string' ? v.url : '';
-}
-
+// Admin > Resources can replace the template; fall back to the bundled copy.
 function masterTemplateUrl() {
-  const p = settingValue('master_template_path');
-  return p ? resourceUrl(p) : FALLBACK_TEMPLATE;
+  return resourceDownloadUrl('master_template_path') || FALLBACK_TEMPLATE;
 }
 
 
@@ -117,7 +113,7 @@ const W = {
   form_schedule_session(step, ro) {
     const d = formData(step);
     const cfg = step.config || {};
-    const url = safeUrl(settingValue(cfg.self_service_link_setting || 'ccc_assessment_url'));
+    const url = safeUrl(settingText(cfg.self_service_link_setting || 'ccc_assessment_url'));
     const link = url && !ro
       ? `<div class="sact"><a class="btn btn-s btn-sm" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(cfg.self_service_link_label || 'Open the CCC Compliance Assessment tool')} ↗</a></div>`
       : '';

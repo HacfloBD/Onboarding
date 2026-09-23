@@ -322,3 +322,33 @@ input,select,textarea{font-family:var(--fb)}
 .acf .fg{margin:0;min-width:150px}
 .acf .fg select{padding:7px 10px;font-size:.84rem}
 .pill-ob{display:inline-block;padding:2px 8px;border-radius:var(--rf);font-size:.68rem;font-weight:700;background:var(--w1);color:var(--w6);white-space:nowrap}
+
+/* Journey resources strip */
+.resrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:16px}
+.resrow:empty{display:none}
+.rcard{display:flex;align-items:center;gap:14px;background:var(--w);border:1px solid var(--g2);border-radius:var(--rl);padding:14px 18px;text-align:left;font-family:var(--fb);color:var(--g8);text-decoration:none;cursor:pointer;transition:var(--t);width:100%}
+.rcard:hover{border-color:var(--cy);box-shadow:0 4px 16px rgba(45,212,191,.12);transform:translateY(-1px)}
+.rcard:focus-visible{outline:none;border-color:var(--cy);box-shadow:0 0 0 3px rgba(45,212,191,.25)}
+.rci{width:40px;height:40px;border-radius:50%;background:var(--tll);border:2px solid var(--cy);color:var(--tl);display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0}
+.rcb{display:flex;flex-direction:column}
+.rct{font-size:.9rem;font-weight:600;color:var(--g9)}
+.rcs{font-size:.76rem;color:var(--g5);margin-top:1px}
+@media(max-width:640px){.resrow{grid-template-columns:1fr}}
+
+/* Video modal */
+.modal.wide{max-width:880px;padding:18px 20px 22px}
+.vhead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.vhead h2{margin:0}
+.vwrap{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:var(--r);overflow:hidden}
+.vwrap iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.modal:focus{outline:none}
+
+/* Admin > Resources */
+.rsec{border:1px solid var(--g2);border-radius:var(--r);padding:16px;margin-bottom:14px}
+.rsec h3{font-size:.95rem;color:var(--g9);margin-bottom:4px}
+.rhint{font-size:.8rem;color:var(--g5);margin-bottom:10px;line-height:1.5}
+.rrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.rrow input[type=file]{font-size:.82rem}
+.rnone{font-size:.84rem;color:var(--g4)}
+.rerr{font-size:.8rem;color:var(--e6);margin-top:6px}
+.rerr:empty{display:none}

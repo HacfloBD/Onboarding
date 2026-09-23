@@ -2,11 +2,13 @@
 import { S, hooks } from './state.js';
 import {
   listProjectOverview, createProject, updateProject, setProjectStatus, listProfiles,
-  resetProjectProgress, logActivity, callFunction, loadActivity
+  resetProjectProgress, logActivity, callFunction, loadActivity,
+  uploadResource, removeResource, saveSetting, loadSettingRows, loadResourceLog, resourceUrl
 } from './data.js';
+import { youtubeId, openVideo } from './resources.js';
 import { portalUrl } from './supabase.js';
 import { openTemplateEditor, openProjectEditor, wireEditor, guardUnsaved, closeEditor } from './phase-editor.js';
-import { toast, openModal, closeModal, registerActions, escapeHtml, daysLeft, slug, fmtDate } from './ui.js';
+import { toast, openModal, closeModal, registerActions, escapeHtml, daysLeft, slug, fmtDate, fmtSize, safeUrl } from './ui.js';
 
 const esc = escapeHtml;
 const $ = id => document.getElementById(id);
@@ -40,6 +42,7 @@ export async function adminGo(s = section) {
     else if (s === 'users') await renderUsers(c, stale);
     else if (s === 'template') await openTemplateEditor(c);
     else if (s === 'activity') await renderActivity(c, stale);
+    else if (s === 'resources') await renderResources(c, stale);
     else if (s === 'phases') {
       if (S.project) await openProjectEditor(c);
       else c.innerHTML = '<div class="ash"><h2>Phases</h2></div><p style="font-size:.86rem;color:var(--g4)">Select a project first. To change the phases every new project starts with, use Phase Template.</p>';
@@ -338,6 +341,95 @@ function exportCsv() {
 }
 
 // ---------------------------------------------------------------------------
+// Resources (app-wide): overview video, user manual, master template, CCC tool
+// ---------------------------------------------------------------------------
+
+const FILES = {
+  manual: {
+    key: 'manual_file_path', folder: 'manual', title: 'User manual', accept: '.pdf,application/pdf',
+    type: 'application/pdf', ext: /\.pdf$/i, hint: 'PDF, up to 20 MB. Shown on everyone\'s Journey as "Download the user manual (PDF)".'
+  },
+  template: {
+    key: 'master_template_path', folder: 'templates', title: 'Master data template', accept: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: /\.xlsx$/i,
+    hint: 'Excel .xlsx, up to 20 MB. Offered in "Option B: Use our master template" on upload steps. Until you upload one, the bundled FLO_Onboarding_Forms.xlsx is used.'
+  }
+};
+const MAX_RESOURCE = 20 * 1048576;
+const RES_LABELS = { overview_video_url: 'Overview video', manual_file_path: 'User manual', master_template_path: 'Master data template', ccc_assessment_url: 'CCC Compliance Assessment tool' };
+let resRows = {};
+
+function fileBlock(kind) {
+  const f = FILES[kind];
+  const v = (resRows[f.key] || {}).value;
+  const cur = v && typeof v === 'object' && v.path ? v : typeof v === 'string' && v ? { path: v, file_name: v.split('/').pop() } : null;
+  return `<div class="rsec"><h3>${f.title}</h3><p class="rhint">${esc(f.hint)}</p>
+${cur ? `<div class="uf"><span>📄</span><div class="ufn">${esc(cur.file_name)}<div class="ufm">${esc([cur.size_bytes ? fmtSize(cur.size_bytes) : '', cur.uploaded_at ? 'Uploaded ' + fmtDate(cur.uploaded_at) : ''].filter(Boolean).join(' · '))}</div></div><a class="btn btn-g btn-sm" href="${esc(resourceUrl(cur.path, cur.file_name || true))}">Download current</a></div>` : '<p class="rnone">No file uploaded yet.</p>'}
+<div class="rrow"><input type="file" id="rf-${kind}" accept="${f.accept}" aria-label="Choose a new ${f.title.toLowerCase()} file"><button class="btn btn-p btn-sm" data-action="res-upload" data-kind="${kind}">${cur ? 'Replace' : 'Upload'}</button></div>
+<div class="uprog" id="rp-${kind}"></div></div>`;
+}
+
+async function renderResources(c, stale) {
+  c.innerHTML = loading;
+  const [rows, log] = await Promise.all([loadSettingRows(), loadResourceLog().catch(() => [])]);
+  if (stale()) return;
+  resRows = Object.fromEntries(rows.map(r => [r.key, r]));
+  const txt = k => { const v = (resRows[k] || {}).value; return typeof v === 'string' ? v : ''; };
+  const who = id => { const p = S.people[id]; return p ? (p.full_name || p.email) : 'someone'; };
+  c.innerHTML = `<div class="ash"><h2>Resources</h2></div>
+<p class="edsub">Shared with every customer. Changes show up on their Journey right away.</p>
+<div class="rsec"><h3>Overview video</h3><p class="rhint">Any YouTube link (watch, youtu.be, shorts or embed). Unlisted videos work. Leave empty to hide the video card.</p>
+<div class="rrow"><div class="fg" style="margin:0;flex:1"><input id="rVid" value="${esc(txt('overview_video_url'))}" placeholder="https://youtu.be/..." aria-label="Overview video URL"></div>
+<button class="btn btn-s btn-sm" data-action="res-video-preview">Preview</button><button class="btn btn-p btn-sm" data-action="res-video-save">Save</button></div>
+<div class="rerr" id="rVidErr"></div></div>
+${fileBlock('manual')}
+${fileBlock('template')}
+<div class="rsec"><h3>CCC Compliance Assessment tool</h3><p class="rhint">Link shown on the "Schedule your 6-Pillar assessment session" step. Leave empty to hide it.</p>
+<div class="rrow"><div class="fg" style="margin:0;flex:1"><input id="rCcc" value="${esc(txt('ccc_assessment_url'))}" placeholder="https://..." aria-label="CCC Compliance Assessment tool URL"></div>
+<button class="btn btn-p btn-sm" data-action="res-ccc-save">Save</button></div>
+<div class="rerr" id="rCccErr"></div></div>
+<h3 class="edsec">Recent changes</h3>
+${log.length ? `<table class="at"><tbody>${log.map(r => `<tr><td style="font-size:.78rem;white-space:nowrap">${esc(fmtDate(r.created_at))}</td><td style="font-size:.82rem">${esc(who(r.actor_id))}</td><td style="font-size:.82rem">${esc(RES_LABELS[r.target] || r.target)} ${r.detail && r.detail.to === null ? 'cleared' : 'updated'}</td></tr>`).join('')}</tbody></table>` : '<p class="rnone">No changes yet.</p>'}`;
+}
+
+async function saveResourceSetting(key, value, okMsg) {
+  try {
+    await saveSetting(key, value);
+    toast(okMsg, 'ok');
+    hooks.reloadSettings();
+    adminGo('resources');
+  } catch (e) {
+    toast('Could not save: ' + esc(e.message), 'err');
+  }
+}
+
+async function uploadResourceFile(kind, btn) {
+  const f = FILES[kind];
+  const inp = $('rf-' + kind);
+  const file = inp && inp.files[0];
+  if (!file) { toast('Choose a file first', 'err'); return; }
+  if (!f.ext.test(file.name)) { toast(`That doesn't look like a ${kind === 'manual' ? 'PDF' : '.xlsx'} file.`, 'err'); return; }
+  if (file.size > MAX_RESOURCE) { toast('The file is larger than 20 MB.', 'err'); return; }
+  const old = (resRows[f.key] || {}).value;
+  const oldPath = old && typeof old === 'object' ? old.path : typeof old === 'string' ? old : null;
+  btn.classList.add('busy');
+  $('rp-' + kind).textContent = `Uploading ${file.name}...`;
+  try {
+    const meta = await uploadResource(f.folder, file, f.type);
+    await saveSetting(f.key, meta);
+    if (oldPath && oldPath !== meta.path) await removeResource(oldPath);
+    toast(`${f.title} updated`, 'ok');
+    hooks.reloadSettings();
+    adminGo('resources');
+  } catch (e) {
+    $('rp-' + kind).textContent = '';
+    toast('Could not upload: ' + esc(e.message), 'err');
+  } finally {
+    btn.classList.remove('busy');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
@@ -395,6 +487,24 @@ registerActions({
     }
     adminGo('projects');
   },
+  'res-video-preview': () => {
+    const v = $('rVid').value.trim();
+    $('rVidErr').textContent = '';
+    if (!openVideo(v, 'Preview: overview video')) $('rVidErr').textContent = 'That is not a YouTube video link.';
+  },
+  'res-video-save': () => {
+    const v = $('rVid').value.trim();
+    $('rVidErr').textContent = '';
+    if (v && !youtubeId(v)) { $('rVidErr').textContent = 'That is not a YouTube video link. Paste the link from YouTube\'s Share button.'; return; }
+    saveResourceSetting('overview_video_url', v || null, v ? 'Overview video saved' : 'Overview video removed');
+  },
+  'res-ccc-save': () => {
+    const v = $('rCcc').value.trim();
+    $('rCccErr').textContent = '';
+    if (v && !safeUrl(v)) { $('rCccErr').textContent = 'Enter a full link starting with https://'; return; }
+    saveResourceSetting('ccc_assessment_url', v ? safeUrl(v) : null, v ? 'Assessment tool link saved' : 'Assessment tool link removed');
+  },
+  'res-upload': el => uploadResourceFile(el.dataset.kind, el),
   'act-refresh': () => adminGo('activity'),
   'act-csv': () => exportCsv(),
   'add-user': () => addUserModal(),

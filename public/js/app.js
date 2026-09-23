@@ -3,11 +3,12 @@ import { S, isAdmin, hooks } from './state.js';
 import { initAuth, signOut } from './auth.js';
 import {
   loadProject, listProjectOverview, listProfiles, loadPhasesAndSteps, loadForms, loadUploads,
-  loadSettings, setStepDone, subscribeProject, loadDirectory, callFunction
+  loadSettings, setStepDone, subscribeProject, loadDirectory, callFunction, subscribeSettings
 } from './data.js';
 import { toast, openModal, closeModal, registerActions, wireActions, escapeHtml, daysLeft } from './ui.js';
 import { wireWidgets, fillThumbs, applyDrafts, flushAll } from './widgets.js';
 import { phaseCard, stepLabel } from './render.js';
+import { resourcesRow } from './resources.js';
 import { adminGo, currentSection } from './admin.js';
 import { refreshProjectEditorIfClean, guardUnsaved, closeEditor } from './phase-editor.js';
 
@@ -133,6 +134,7 @@ function emptyJourney() {
 }
 
 function rJ() {
+  $('jRes').innerHTML = resourcesRow();
   if (!S.project) { $('jNx').innerHTML = ''; $('jPh').innerHTML = emptyJourney(); return; }
   $('jNx').innerHTML = nextCard(findNext());
   $('jPh').innerHTML = S.phases.map((p, i) => phaseCard(p, i, { open: S.open.has(p.id) })).join('');
@@ -297,6 +299,19 @@ async function refreshPeople() {
   if (directory.status === 'fulfilled') S.directory = directory.value; else console.warn('directory', directory.reason.message);
 }
 
+let unsubSettings = null;
+let settingsTimer = null;
+
+// Admin > Resources changes (new manual, video, template) show up without a reload.
+function reloadSettings() {
+  clearTimeout(settingsTimer);
+  settingsTimer = setTimeout(async () => {
+    try { S.settings = await loadSettings(); } catch (e) { console.warn('settings', e.message); return; }
+    if (isEditing()) { renderDeferred = true; return; }
+    renderAll();
+  }, 200);
+}
+
 async function enter(user, project) {
   S.user = user;
   $('lp').style.display = 'none';
@@ -304,6 +319,8 @@ async function enter(user, project) {
   // Independent loads: one failing must not blank the others.
   const [settings] = await Promise.allSettled([loadSettings(), refreshPeople()]);
   if (settings.status === 'fulfilled') S.settings = settings.value; else console.warn('settings', settings.reason.message);
+  if (unsubSettings) unsubSettings();
+  unsubSettings = subscribeSettings(() => reloadSettings());
   if (isAdmin()) {
     await refreshProjectList();
     const pref = prefGet();
@@ -319,12 +336,13 @@ async function enter(user, project) {
 
 function leaveApp() {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  if (unsubSettings) { unsubSettings(); unsubSettings = null; }
   loadSeq++;
   Object.assign(S, { user: null, project: null, projects: [], phases: [], forms: {}, uploads: [], people: {}, directory: {}, settings: {}, adminNew: false });
   S.open = new Set(); S.viewOpen = new Set();
   $('lp').style.display = '';
   $('app').classList.remove('on');
-  $('mW').classList.add('hid');
+  closeModal();
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +351,7 @@ function leaveApp() {
 
 Object.assign(hooks, {
   render: renderAll,
+  reloadSettings,
   refreshPeople,
   reload,
   selectProject,
